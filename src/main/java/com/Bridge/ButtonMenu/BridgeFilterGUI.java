@@ -18,11 +18,12 @@ public class BridgeFilterGUI extends GuiScreen {
 
         addCategoryButton(0, "Фильтр сообщений");
         addCategoryButton(1, "Формат чата");
-        addCategoryButton(2, "Настройки (скоро)");
+        addCategoryButton(2, "Guild Bridge");
         addCategoryButton(3, "Инфо (скоро)");
 
         if (selectedCategory == 0) buildFilterPage();
         else if (selectedCategory == 1) buildFormatPage();
+        else if (selectedCategory == 2) buildGuildBridgePage();
 
         // Кнопка проверки обновлений
         String updateText = UpdateChecker.updateAvailable ? "§aОбновление доступно!" : "Проверить обновления";
@@ -84,6 +85,13 @@ public class BridgeFilterGUI extends GuiScreen {
         }
     }
 
+    private void buildGuildBridgePage() {
+        int c = width / 2 - 100;
+
+        buttonList.add(new GuiButton(2000, c, 80, 200, 28,
+                BridgeFilterConfig.guildBridgeFormatEnabled ? "§aФормат Guild: ВКЛ" : "§cФормат Guild: ВЫКЛ"));
+    }
+
     @Override
     protected void actionPerformed(GuiButton button) {
         if (button.id >= 100 && button.id < 200) {
@@ -124,6 +132,13 @@ public class BridgeFilterGUI extends GuiScreen {
             if (button.id >= 1100 && button.id < 1200) {
                 String[] codes = {"§e", "§c", "§a", "§b", "§d", "§6", "§f", "§0"};
                 BridgeFilterConfig.nickHighlightColor = codes[button.id - 1100];
+                initGui();
+            }
+        }
+
+        if (selectedCategory == 2) {
+            if (button.id == 2000) {
+                BridgeFilterConfig.guildBridgeFormatEnabled = !BridgeFilterConfig.guildBridgeFormatEnabled;
                 initGui();
             }
         }
@@ -193,6 +208,29 @@ public class BridgeFilterGUI extends GuiScreen {
             drawRect(textField.xPosition, textField.yPosition,
                     textField.xPosition + textField.width, textField.yPosition + textField.height, 0xFF252525);
             textField.drawTextBox();
+        }
+
+        // Информация о Guild Bridge форматировании
+        if (selectedCategory == 2) {
+            int infoX = 250;
+            int infoY = 130;
+            drawString(fontRendererObj, "§7Форматирует сообщения от:", infoX, infoY, 0xCCCCCC);
+            infoY += 15;
+            drawString(fontRendererObj, "§8• etobridge", infoX + 10, infoY, 0xAAAAAA);
+            infoY += 12;
+            drawString(fontRendererObj, "§8• koorikage", infoX + 10, infoY, 0xAAAAAA);
+            infoY += 12;
+            drawString(fontRendererObj, "§8• mothikh", infoX + 10, infoY, 0xAAAAAA);
+            infoY += 12;
+            drawString(fontRendererObj, "§8• tenokage", infoX + 10, infoY, 0xAAAAAA);
+            infoY += 20;
+            drawString(fontRendererObj, "§7Форматы:", infoX, infoY, 0xCCCCCC);
+            infoY += 15;
+            drawString(fontRendererObj, "§8• .Nick: текст → [Minecraft]", infoX + 10, infoY, 0xAAAAAA);
+            infoY += 12;
+            drawString(fontRendererObj, "§8• [TG] Nick: текст → [Telegram]", infoX + 10, infoY, 0xAAAAAA);
+            infoY += 12;
+            drawString(fontRendererObj, "§8• Nick: текст → [Discord]", infoX + 10, infoY, 0xAAAAAA);
         }
 
         drawString(fontRendererObj, "§7Правый Shift — открыть меню", width - 190, height - 25, 0x888888);

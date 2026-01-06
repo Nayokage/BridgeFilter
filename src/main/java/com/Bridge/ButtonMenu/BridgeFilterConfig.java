@@ -13,5 +13,7 @@ public class BridgeFilterConfig {
 
     public static boolean nickHighlightEnabled = true;
     public static String nickHighlightColor = "§e";
+    
+    public static boolean guildBridgeFormatEnabled = true;
 
 }
