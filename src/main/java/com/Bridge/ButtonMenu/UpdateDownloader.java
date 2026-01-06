@@ -68,17 +68,55 @@ public class UpdateDownloader {
                 
                 downloadStatus = "Подключаемся к серверу...";
                 
-                // Скачиваем файл
+                // Скачиваем файл (с поддержкой редиректов)
                 URL url = new URL(updateInfo.downloadUrl);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("GET");
-                conn.setConnectTimeout(10000);
-                conn.setReadTimeout(30000);
-                conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.0");
+                HttpURLConnection conn = null;
+                int redirectCount = 0;
+                int maxRedirects = 5;
                 
-                int responseCode = conn.getResponseCode();
-                if (responseCode != HttpURLConnection.HTTP_OK) {
-                    throw new IOException("HTTP код ошибки: " + responseCode);
+                while (redirectCount < maxRedirects) {
+                    if (conn != null) {
+                        conn.disconnect();
+                    }
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("GET");
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(30000);
+                    conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.0");
+                    conn.setInstanceFollowRedirects(false); // Обрабатываем редиректы вручную
+                    
+                    int responseCode = conn.getResponseCode();
+                    
+                    // Обрабатываем редиректы (301, 302, 307, 308)
+                    if (responseCode == HttpURLConnection.HTTP_MOVED_PERM || 
+                        responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
+                        responseCode == 307 || responseCode == 308) {
+                        String location = conn.getHeaderField("Location");
+                        if (location != null && !location.isEmpty()) {
+                            url = new URL(location);
+                            redirectCount++;
+                            System.out.println("[Bridge Filter] Редирект " + redirectCount + " на: " + location);
+                            continue;
+                        }
+                    }
+                    
+                    if (responseCode != HttpURLConnection.HTTP_OK) {
+                        String errorMsg = "HTTP код ошибки: " + responseCode;
+                        if (responseCode == 404) {
+                            errorMsg += " (файл не найден). Проверьте:\n" +
+                                       "1. Имя файла в релизе должно быть: BridgeFilter-" + updateInfo.version + ".jar\n" +
+                                       "2. Тег релиза должен совпадать с версией в update.json\n" +
+                                       "3. URL: " + updateInfo.downloadUrl;
+                        }
+                        throw new IOException(errorMsg);
+                    }
+                    
+                    // Успешно получили ответ
+                    break;
+                }
+                
+                if (redirectCount >= maxRedirects) {
+                    throw new IOException("Слишком много редиректов (>" + maxRedirects + ")");
                 }
                 
                 long fileSize = conn.getContentLengthLong();

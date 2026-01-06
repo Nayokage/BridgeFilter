@@ -41,11 +41,26 @@ public class UpdateChecker {
         
         new Thread(() -> {
             try {
-                // Сначала пробуем через update.json
-                UpdateInfo info = checkViaUpdateJson();
-                if (info == null) {
-                    // Если не получилось, пробуем через GitHub API
-                    info = checkViaGitHubAPI();
+                // Пробуем получить информацию об обновлении
+                UpdateInfo info = null;
+                
+                // Сначала пробуем через GitHub API (там всегда правильный URL с тегом)
+                UpdateInfo apiInfo = checkViaGitHubAPI();
+                
+                // Пробуем через update.json для получения changelog
+                UpdateInfo jsonInfo = checkViaUpdateJson();
+                
+                // Комбинируем: версию и URL из API (если есть), changelog из update.json
+                if (apiInfo != null) {
+                    info = apiInfo;
+                    // Если есть changelog из update.json и версии совпадают, используем его
+                    if (jsonInfo != null && jsonInfo.version.equals(apiInfo.version) && 
+                        jsonInfo.changelog != null && !jsonInfo.changelog.isEmpty()) {
+                        info.changelog = jsonInfo.changelog;
+                    }
+                } else if (jsonInfo != null) {
+                    // Если API не работает, используем update.json
+                    info = jsonInfo;
                 }
                 
                 if (info != null && isNewerVersion(info.version, CURRENT_VERSION)) {
@@ -87,7 +102,7 @@ public class UpdateChecker {
             conn.setReadTimeout(5000);
             conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.0");
             
-            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
             StringBuilder response = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) {
@@ -107,9 +122,31 @@ public class UpdateChecker {
             String homepage = json.has("homepage") ? json.get("homepage").getAsString() : 
                              "https://github.com/Nayokage/BridgeFilter/releases";
             
-            // Формируем URL для скачивания
-            String downloadUrl = "https://github.com/Nayokage/BridgeFilter/releases/download/" + latestVersion + 
-                                "/BridgeFilter-" + latestVersion + ".jar";
+            // Пробуем получить правильный URL через GitHub API
+            // Если не получится, используем стандартный формат
+            String downloadUrl = null;
+            try {
+                UpdateInfo apiInfo = checkViaGitHubAPI();
+                if (apiInfo != null && apiInfo.version.equals(latestVersion)) {
+                    downloadUrl = apiInfo.downloadUrl;
+                }
+            } catch (Exception e) {
+                // Игнорируем ошибку, используем стандартный URL
+            }
+            
+            // Если не получили через API, формируем стандартный URL
+            // Пробуем разные варианты тега (с v и без)
+            if (downloadUrl == null) {
+                // Пробуем оба варианта: сначала с префиксом v, потом без
+                // Тег на GitHub может быть v1.0.1 или 1.0.1
+                String[] tagVariants = {"v" + latestVersion, latestVersion};
+                downloadUrl = "https://github.com/Nayokage/BridgeFilter/releases/download/" + tagVariants[0] + 
+                            "/BridgeFilter-" + latestVersion + ".jar";
+                System.out.println("[Bridge Filter] Используем стандартный URL (с v): " + downloadUrl);
+                System.out.println("[Bridge Filter] Если не работает, попробуйте тег без префикса v");
+            } else {
+                System.out.println("[Bridge Filter] Получен URL через GitHub API: " + downloadUrl);
+            }
             
             return new UpdateInfo(latestVersion, downloadUrl, changelog, homepage);
         } catch (Exception e) {
@@ -127,7 +164,7 @@ public class UpdateChecker {
             conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.0");
             conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
             
-            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
             StringBuilder response = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) {
@@ -138,7 +175,8 @@ public class UpdateChecker {
             JsonParser parser = new JsonParser();
             JsonObject json = parser.parse(response.toString()).getAsJsonObject();
             
-            String version = json.get("tag_name").getAsString().replace("v", "");
+            String tagName = json.get("tag_name").getAsString();
+            String version = tagName.replace("v", "");
             String changelog = json.has("body") ? json.get("body").getAsString() : "";
             String releaseUrl = json.has("html_url") ? json.get("html_url").getAsString() : 
                                "https://github.com/Nayokage/BridgeFilter/releases";
@@ -157,10 +195,11 @@ public class UpdateChecker {
                 }
             }
             
-            // Если не нашли в assets, формируем стандартный URL
+            // Если не нашли в assets, формируем стандартный URL используя точный тег
             if (downloadUrl == null) {
-                downloadUrl = "https://github.com/Nayokage/BridgeFilter/releases/download/" + 
-                             json.get("tag_name").getAsString() + "/BridgeFilter-" + version + ".jar";
+                // Используем точный tag_name из API (может быть v1.0.1 или 1.0.1)
+                downloadUrl = "https://github.com/Nayokage/BridgeFilter/releases/download/" + tagName + 
+                             "/BridgeFilter-" + version + ".jar";
             }
             
             return new UpdateInfo(version, downloadUrl, changelog, releaseUrl);
