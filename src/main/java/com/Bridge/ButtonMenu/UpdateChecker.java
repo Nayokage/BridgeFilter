@@ -52,11 +52,14 @@ public class UpdateChecker {
                     latestUpdate = info;
                     updateAvailable = true;
                     
+                    // Сохраняем финальную ссылку для использования в лямбде
+                    final UpdateInfo finalInfo = info;
+                    
                     // Показываем уведомление в чате
                     Minecraft.getMinecraft().addScheduledTask(() -> {
                         if (Minecraft.getMinecraft().thePlayer != null) {
                             Minecraft.getMinecraft().thePlayer.addChatMessage(
-                                new ChatComponentText("§9[Bridge Filter] §aДоступно обновление! Версия: §e" + info.version)
+                                new ChatComponentText("§9[Bridge Filter] §aДоступно обновление! Версия: §e" + finalInfo.version)
                             );
                             Minecraft.getMinecraft().thePlayer.addChatMessage(
                                 new ChatComponentText("§9[Bridge Filter] §7Нажмите §eПравый Shift §7для открытия меню обновления")
@@ -143,8 +146,9 @@ public class UpdateChecker {
             // Ищем URL для скачивания .jar файла
             String downloadUrl = null;
             if (json.has("assets")) {
-                for (var asset : json.getAsJsonArray("assets")) {
-                    JsonObject assetObj = asset.getAsJsonObject();
+                com.google.gson.JsonArray assetsArray = json.getAsJsonArray("assets");
+                for (int i = 0; i < assetsArray.size(); i++) {
+                    JsonObject assetObj = assetsArray.get(i).getAsJsonObject();
                     String name = assetObj.get("name").getAsString();
                     if (name.endsWith(".jar") && name.contains("BridgeFilter")) {
                         downloadUrl = assetObj.get("browser_download_url").getAsString();
