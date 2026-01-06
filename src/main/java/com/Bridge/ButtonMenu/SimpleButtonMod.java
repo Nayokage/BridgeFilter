@@ -33,6 +33,31 @@ public class SimpleButtonMod {
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
         MinecraftForge.EVENT_BUS.register(this);
+        
+        // Удаляем файлы, помеченные для удаления (оставшиеся с предыдущих обновлений)
+        new Thread(() -> {
+            try {
+                Thread.sleep(2000); // Ждем 2 секунды после загрузки
+                File mcDir = Minecraft.getMinecraft().mcDataDir;
+                File modsDir = new File(mcDir, "mods");
+                if (modsDir.exists()) {
+                    File[] deleteMarkers = modsDir.listFiles((dir, name) -> name.endsWith(".delete"));
+                    if (deleteMarkers != null) {
+                        for (File marker : deleteMarkers) {
+                            try {
+                                if (marker.delete()) {
+                                    System.out.println("[Bridge Filter] Удален помеченный файл: " + marker.getName());
+                                }
+                            } catch (Exception e) {
+                                // Игнорируем ошибки
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Игнорируем ошибки
+            }
+        }).start();
     }
     
     @SubscribeEvent

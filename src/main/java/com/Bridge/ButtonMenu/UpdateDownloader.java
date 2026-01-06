@@ -147,28 +147,72 @@ public class UpdateDownloader {
                 downloadStatus = "Устанавливаем обновление...";
                 
                 // Удаляем старую версию мода если есть
-                File[] modFiles = modsDir.listFiles((dir, name) -> 
-                    name.startsWith("BridgeFilter") && name.endsWith(".jar") && !name.equals(fileName) && !name.endsWith(".tmp"));
+                File[] modFiles = modsDir.listFiles((dir, name) -> {
+                    String lowerName = name.toLowerCase();
+                    return lowerName.startsWith("bridgefilter") && lowerName.endsWith(".jar") && 
+                           !name.equals(fileName) && !name.endsWith(".tmp");
+                });
+                
                 if (modFiles != null && modFiles.length > 0) {
                     downloadStatus = "Удаляем старые версии...";
                     for (File oldMod : modFiles) {
                         try {
                             // Пытаемся удалить файл несколько раз (на случай если он заблокирован)
                             boolean deleted = false;
-                            for (int i = 0; i < 5 && !deleted; i++) {
+                            
+                            // Сначала пробуем обычное удаление
+                            for (int i = 0; i < 10 && !deleted; i++) {
                                 deleted = oldMod.delete();
                                 if (!deleted) {
-                                    Thread.sleep(200); // Ждем 200мс перед следующей попыткой
+                                    Thread.sleep(300); // Ждем 300мс перед следующей попыткой
                                 }
                             }
+                            
+                            // Если не получилось, пробуем пометить для удаления при следующем запуске
+                            if (!deleted) {
+                                try {
+                                    // Пытаемся переименовать файл, чтобы пометить для удаления
+                                    File deleteMarker = new File(oldMod.getParent(), oldMod.getName() + ".delete");
+                                    if (oldMod.renameTo(deleteMarker)) {
+                                        // Если переименование успешно, пробуем удалить переименованный файл
+                                        for (int i = 0; i < 5 && !deleted; i++) {
+                                            deleted = deleteMarker.delete();
+                                            if (!deleted) {
+                                                Thread.sleep(200);
+                                            }
+                                        }
+                                        if (deleted) {
+                                            System.out.println("[Bridge Filter] Удален старый файл (через переименование): " + oldMod.getName());
+                                        } else {
+                                            // Файл останется с расширением .delete - его можно удалить вручную или при следующем запуске
+                                            System.out.println("[Bridge Filter] Старый файл помечен для удаления: " + deleteMarker.getName());
+                                        }
+                                    }
+                                } catch (Exception e2) {
+                                    System.err.println("[Bridge Filter] Ошибка при переименовании файла: " + e2.getMessage());
+                                }
+                            }
+                            
                             if (deleted) {
                                 System.out.println("[Bridge Filter] Удален старый файл: " + oldMod.getName());
                             } else {
                                 System.err.println("[Bridge Filter] Не удалось удалить старую версию: " + oldMod.getName() + 
-                                                 " (файл может быть заблокирован, удалите вручную)");
+                                                 " (файл заблокирован игрой, удалите вручную после закрытия игры)");
                             }
                         } catch (Exception e) {
                             System.err.println("[Bridge Filter] Ошибка при удалении старой версии " + oldMod.getName() + ": " + e.getMessage());
+                        }
+                    }
+                }
+                
+                // Также удаляем файлы с расширением .delete (оставшиеся с предыдущих попыток)
+                File[] deleteMarkers = modsDir.listFiles((dir, name) -> name.endsWith(".delete"));
+                if (deleteMarkers != null) {
+                    for (File marker : deleteMarkers) {
+                        try {
+                            marker.delete();
+                        } catch (Exception e) {
+                            // Игнорируем ошибки при удалении маркеров
                         }
                     }
                 }
