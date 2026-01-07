@@ -20,7 +20,7 @@ import java.io.File;
 
 @Mod(modid = "bridgefilter",
         name = "Bridge Filter",
-        version = "1.0.0",
+        version = "1.0.4",
         clientSideOnly = true,
         updateJSON = "https://raw.githubusercontent.com/Nayokage/BridgeFilter/main/update.json")
 
@@ -117,14 +117,11 @@ public class SimpleButtonMod {
 
         // Форматирование Guild-сообщений от bridge-ботов
         if (BridgeFilterConfig.guildBridgeFormatEnabled) {
-            String lowerUnformatted = unformatted.toLowerCase();
-            if (lowerUnformatted.startsWith("guild")) {
-                String formattedGuildMsg = formatGuildBridgeMessage(unformatted, formatted);
-                if (formattedGuildMsg != null) {
-                    event.message = new ChatComponentText(formattedGuildMsg);
-                    // Обновляем unformatted для дальнейшей обработки
-                    unformatted = event.message.getUnformattedText();
-                }
+            String formattedGuildMsg = formatGuildBridgeMessage(unformatted);
+            if (formattedGuildMsg != null) {
+                event.message = new ChatComponentText(formattedGuildMsg);
+                // Обновляем unformatted для дальнейшей обработки
+                unformatted = event.message.getUnformattedText();
             }
         }
 
@@ -154,113 +151,74 @@ public class SimpleButtonMod {
     }
     
     /**
-     * Форматирует сообщения из Guild-чата от bridge-ботов
-     * Удаляет префикс "Guild > [Ранг] НикБриджАккаунта[РангВГильдии]:" 
-     * и форматирует по источнику (Minecraft/Telegram/Discord)
-     * 
-     * @param unformatted Неформатированный текст сообщения
-     * @param formatted Форматированный текст с цветовыми кодами
-     * @return Отформатированное сообщение или null, если не является bridge-сообщением
+     * Простой форматтер Guild Bridge-сообщений.
+     *
+     * Вход (unformatted), примеры:
+     *  "Guild > [MVP+] etobridge[Officer]: .Steve: hi"
+     *  "Guild > [VIP] etobridge[Member]: [TG] Alex: yo"
+     *  "Guild > etobridge[Admin]: Bob: hello"
+     *
+     * Выход:
+     *  "[Minecraft] Steve: hi"
+     *  "[Telegram] Alex: yo"
+     *  "[Discord] Bob: hello"
+     *
+     * Сообщения обычных игроков гильдии не трогаются.
      */
-    private String formatGuildBridgeMessage(String unformatted, String formatted) {
-        // Список ботов для проверки
+    private String formatGuildBridgeMessage(String fullGuildMessage) {
+        if (fullGuildMessage == null) return null;
+
         String[] bots = {"etobridge", "koorikage", "mothikh", "tenokage"};
-        
-        // Проверяем, что сообщение от одного из bridge-ботов
-        String lowerUnformatted = unformatted.toLowerCase();
-        boolean isFromBridgeBot = false;
+
+        String lower = fullGuildMessage.toLowerCase();
+
+        // Должно быть Guild-сообщение
+        if (!lower.contains("guild >")) {
+            return null;
+        }
+
+        // Находим бота
         String foundBot = null;
+        int botIndex = -1;
         for (String bot : bots) {
-            if (lowerUnformatted.contains(bot.toLowerCase())) {
-                isFromBridgeBot = true;
+            int idx = lower.indexOf(bot.toLowerCase());
+            if (idx >= 0) {
                 foundBot = bot;
+                botIndex = idx;
                 break;
             }
         }
-        
-        if (!isFromBridgeBot) {
-            return null; // Не от bridge-бота, не трогаем
+        if (foundBot == null || botIndex < 0) {
+            return null; // не наш бот
         }
-        
-        // Проверяем, что это Guild-сообщение
-        if (!lowerUnformatted.startsWith("guild")) {
+
+        // Ищем двоеточие после ника бота: Guild > ... BOT[Rank]: body
+        int searchFrom = botIndex + foundBot.length();
+        int colonIndex = fullGuildMessage.indexOf(':', searchFrom);
+        if (colonIndex < 0 || colonIndex + 1 >= fullGuildMessage.length()) {
             return null;
         }
-        
-        // Более гибкий regex для удаления префикса
-        // Формат: "Guild > [Ранг] НикБот[РангВГильдии]:"
-        // Примеры из логов:
-        // "Guild > [VIP+] Koorikage []: ironmenlove: 8 "
-        // "Guild > [VIP+] Koorikage []: : 123321"
-        
-        // Пробуем несколько вариантов паттернов
-        Pattern[] patterns = {
-            // Стандартный формат: Guild > [Ранг] Бот[Ранг]: текст
-            Pattern.compile(
-                "Guild\\s*>\\s*\\[.*?\\]\\s*" + Pattern.quote(foundBot) + "\\s*\\[.*?\\]\\s*:\\s*",
-                Pattern.CASE_INSENSITIVE
-            ),
-            // Альтернативный: Guild > [Ранг] Бот: текст (без ранга в гильдии)
-            Pattern.compile(
-                "Guild\\s*>\\s*\\[.*?\\]\\s*" + Pattern.quote(foundBot) + "\\s*:\\s*",
-                Pattern.CASE_INSENSITIVE
-            ),
-            // Ещё один вариант: любые символы между [Ранг] и Бот
-            Pattern.compile(
-                "Guild\\s*>\\s*\\[.*?\\]\\s+.*?" + Pattern.quote(foundBot) + ".*?:\\s*",
-                Pattern.CASE_INSENSITIVE
-            )
-        };
-        
-        Matcher matcher = null;
-        boolean found = false;
-        for (Pattern pattern : patterns) {
-            matcher = pattern.matcher(unformatted);
-            if (matcher.find()) {
-                found = true;
-                break;
-            }
-        }
-        
-        if (!found || matcher == null) {
-            System.out.println("[Bridge Filter] Не удалось найти префикс для: " + unformatted);
+
+        String body = fullGuildMessage.substring(colonIndex + 1).trim();
+        if (body.isEmpty()) {
             return null;
         }
-        
-        // Получаем тело сообщения после удаления префикса
-        String messageBody = unformatted.substring(matcher.end()).trim();
-        
-        if (messageBody.isEmpty()) {
-            return null; // Пустое сообщение
-        }
-        
-        // Определяем источник и форматируем
-        String formattedBody;
-        if (messageBody.startsWith(".")) {
-            // Minecraft Bridge: .Nick: текст
-            formattedBody = messageBody.substring(1).trim(); // Убираем точку
-            formattedBody = "[Minecraft] " + formattedBody;
-        } else if (messageBody.startsWith("[TG]")) {
-            // Telegram: [TG] Nick: текст
-            formattedBody = messageBody.substring(4).trim(); // Убираем "[TG]"
-            formattedBody = "[Telegram] " + formattedBody;
+
+        String result;
+        if (body.startsWith(".")) {
+            // Minecraft Bridge
+            String rest = body.substring(1).trim(); // убираем точку
+            result = "[Minecraft] " + rest;
+        } else if (body.startsWith("[TG]")) {
+            // Telegram
+            String rest = body.substring(4).trim(); // убираем "[TG]"
+            result = "[Telegram] " + rest;
         } else {
-            // Discord (по умолчанию): Nick: текст или просто текст
-            formattedBody = "[Discord] " + messageBody;
+            // Discord по умолчанию
+            result = "[Discord] " + body;
         }
-        
-        // Сохраняем цветовые коды из оригинального сообщения
-        // Извлекаем цветовые коды из начала formatted сообщения
-        String colorPrefix = "";
-        Pattern colorPattern = Pattern.compile("^(§[0-9a-fk-or])+");
-        Matcher colorMatcher = colorPattern.matcher(formatted);
-        if (colorMatcher.find()) {
-            colorPrefix = colorMatcher.group();
-        }
-        
-        // Формируем итоговое сообщение с сохранением цветов
-        String result = colorPrefix + formattedBody;
-        System.out.println("[Bridge Filter] Форматировано: " + unformatted + " -> " + result);
+
+        System.out.println("[Bridge Filter] GuildBridge: " + fullGuildMessage + " -> " + result);
         return result;
     }
 }
