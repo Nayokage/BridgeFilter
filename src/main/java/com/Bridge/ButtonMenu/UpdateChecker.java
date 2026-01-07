@@ -15,7 +15,7 @@ public class UpdateChecker {
     
     private static final String UPDATE_JSON_URL = "https://raw.githubusercontent.com/Nayokage/BridgeFilter/main/update.json";
     private static final String GITHUB_API_URL = "https://api.github.com/repos/Nayokage/BridgeFilter/releases/latest";
-    private static final String CURRENT_VERSION = "1.0.0";
+    private static final String CURRENT_VERSION = "1.0.4";
     
     public static UpdateInfo latestUpdate = null;
     public static boolean updateAvailable = false;
@@ -100,7 +100,7 @@ public class UpdateChecker {
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
-            conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.0");
+            conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.4");
             
             BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
             StringBuilder response = new StringBuilder();
@@ -161,7 +161,7 @@ public class UpdateChecker {
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
-            conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.0");
+            conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.4");
             conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
             
             BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));

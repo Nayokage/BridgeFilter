@@ -117,12 +117,20 @@ public class SimpleButtonMod {
 
         // Форматирование Guild-сообщений от bridge-ботов
         if (BridgeFilterConfig.guildBridgeFormatEnabled) {
-            String formattedGuildMsg = formatGuildBridgeMessage(unformatted);
-            if (formattedGuildMsg != null) {
-                event.message = new ChatComponentText(formattedGuildMsg);
-                // Обновляем unformatted для дальнейшей обработки
-                unformatted = event.message.getUnformattedText();
+            if (unformatted.toLowerCase().contains("guild >")) {
+                System.out.println("[Bridge Filter] onChat: обрабатываем Guild-сообщение: " + unformatted);
+                String formattedGuildMsg = formatGuildBridgeMessage(unformatted);
+                if (formattedGuildMsg != null) {
+                    System.out.println("[Bridge Filter] onChat: форматирование применено!");
+                    event.message = new ChatComponentText(formattedGuildMsg);
+                    // Обновляем unformatted для дальнейшей обработки
+                    unformatted = event.message.getUnformattedText();
+                } else {
+                    System.out.println("[Bridge Filter] onChat: форматирование НЕ применено (вернул null)");
+                }
             }
+        } else {
+            System.out.println("[Bridge Filter] onChat: guildBridgeFormatEnabled = false");
         }
 
         if (BridgeFilterConfig.nickHighlightEnabled && unformatted.contains(playerName)) {
@@ -168,12 +176,15 @@ public class SimpleButtonMod {
     private String formatGuildBridgeMessage(String fullGuildMessage) {
         if (fullGuildMessage == null) return null;
 
+        System.out.println("[Bridge Filter] formatGuildBridgeMessage вызван: " + fullGuildMessage);
+        
         String[] bots = {"etobridge", "koorikage", "mothikh", "tenokage"};
 
         String lower = fullGuildMessage.toLowerCase();
 
         // Должно быть Guild-сообщение
         if (!lower.contains("guild >")) {
+            System.out.println("[Bridge Filter] Не Guild-сообщение");
             return null;
         }
 
@@ -189,8 +200,11 @@ public class SimpleButtonMod {
             }
         }
         if (foundBot == null || botIndex < 0) {
+            System.out.println("[Bridge Filter] Не от bridge-бота");
             return null; // не наш бот
         }
+        
+        System.out.println("[Bridge Filter] Найден бот: " + foundBot + " на позиции " + botIndex);
 
         // Ищем двоеточие после ника бота: Guild > ... BOT[Rank]: body
         int searchFrom = botIndex + foundBot.length();
@@ -205,20 +219,53 @@ public class SimpleButtonMod {
         }
 
         String result;
+        String lowerBody = body.toLowerCase().trim();
+        body = body.trim(); // Убираем пробелы в начале
+        
+        // Проверяем Minecraft Bridge (начинается с точки)
         if (body.startsWith(".")) {
-            // Minecraft Bridge
             String rest = body.substring(1).trim(); // убираем точку
-            result = "[Minecraft] " + rest;
-        } else if (body.startsWith("[TG]")) {
-            // Telegram
-            String rest = body.substring(4).trim(); // убираем "[TG]"
-            result = "[Telegram] " + rest;
-        } else {
-            // Discord по умолчанию
-            result = "[Discord] " + body;
+            // Проверяем, есть ли ник (формат: .Nick: текст)
+            // Ник должен быть перед двоеточием и не содержать пробелов/апострофов
+            int colonIdx = rest.indexOf(':');
+            if (colonIdx > 0 && colonIdx < 50 && !rest.substring(0, colonIdx).contains("'") && !rest.substring(0, colonIdx).contains(" ")) {
+                // Есть ник, форматируем как обычно
+                result = "[Minecraft] " + rest;
+            } else {
+                // Нет ника или это команда (есть апостроф/пробел перед :), это команда
+                result = "Bridge Command: " + rest;
+            }
+        } 
+        // Проверяем Telegram (начинается с [TG] или [tg] в любом регистре)
+        else if (lowerBody.startsWith("[tg]")) {
+            String rest = body.substring(4).trim(); // убираем "[TG]" (4 символа)
+            // Проверяем, есть ли ник (формат: [TG] Nick: текст)
+            // Ник должен быть перед двоеточием и не содержать пробелов/апострофов
+            int colonIdx = rest.indexOf(':');
+            if (colonIdx > 0 && colonIdx < 50 && !rest.substring(0, colonIdx).contains("'") && !rest.substring(0, colonIdx).contains(" ")) {
+                // Есть ник, форматируем как обычно
+                result = "[Telegram] " + rest;
+            } else {
+                // Нет ника или это команда, это команда
+                result = "Bridge Command: " + rest;
+            }
+        } 
+        // Discord по умолчанию
+        else {
+            // Проверяем, есть ли ник (формат: Nick: текст)
+            // Ник должен быть перед двоеточием и не содержать пробелов/апострофов
+            int colonIdx = body.indexOf(':');
+            if (colonIdx > 0 && colonIdx < 50 && !body.substring(0, colonIdx).contains("'") && !body.substring(0, colonIdx).contains(" ")) {
+                // Есть ник, форматируем как обычно
+                result = "[Discord] " + body;
+            } else {
+                // Нет ника или это команда (например: "Nayokage's networth: 1.522b")
+                result = "Bridge Command: " + body;
+            }
         }
 
-        System.out.println("[Bridge Filter] GuildBridge: " + fullGuildMessage + " -> " + result);
+        System.out.println("[Bridge Filter] GuildBridge: " + fullGuildMessage);
+        System.out.println("[Bridge Filter] Body: '" + body + "' -> Result: '" + result + "'");
         return result;
     }
 }
