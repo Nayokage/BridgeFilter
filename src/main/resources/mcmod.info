@@ -3,7 +3,7 @@
     "modid": "simplebuttonmod",
     "name": "Simple Button Mod",
     "description": "Добавляет кнопку внизу экрана, которая пишет сообщение в чат",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "mcversion": "1.8.9",
     "url": "",
     "updateUrl": "",

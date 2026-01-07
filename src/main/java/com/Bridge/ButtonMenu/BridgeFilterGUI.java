@@ -163,7 +163,7 @@ public class BridgeFilterGUI extends GuiScreen {
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawRect(0, 0, width, height, 0xAA000000);
         drawRect(10, 10, width - 10, height - 10, 0xFF1E1E1E);
-        drawCenteredString(fontRendererObj, "§9§lBridge Filter §8v1.0.5", width / 2, 20, 0x00FFFF);
+        drawCenteredString(fontRendererObj, "§9§lBridge Filter §8v1.0.6", width / 2, 20, 0x00FFFF);
 
         drawRect(15, 45, 195, height - 15, 0xFF252525);
         drawRect(210, 45, width - 15, height - 15, 0xFF252525);

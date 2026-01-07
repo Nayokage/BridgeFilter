@@ -20,7 +20,7 @@ import java.io.File;
 
 @Mod(modid = "bridgefilter",
         name = "Bridge Filter",
-        version = "1.0.5",
+        version = "1.0.6",
         clientSideOnly = true,
         updateJSON = "https://raw.githubusercontent.com/Nayokage/BridgeFilter/main/update.json")
 
@@ -221,42 +221,52 @@ public class SimpleButtonMod {
         }
 
         String result;
+        String sourceColor = ""; // Цвет для префикса источника
         String lowerBody = body.toLowerCase().trim();
         body = body.trim(); // Убираем пробелы в начале
         
         // Проверяем Minecraft Bridge (начинается с точки)
         if (body.startsWith(".")) {
             String rest = body.substring(1).trim(); // убираем точку
+            sourceColor = "§a"; // Зеленый цвет для Minecraft
             // Проверяем, есть ли ник (формат: .Nick: текст)
-            // Ник должен быть перед двоеточием и не содержать пробелов/апострофов
             int colonIdx = rest.indexOf(':');
-            if (colonIdx > 0 && colonIdx < 50 && !rest.substring(0, colonIdx).contains("'") && !rest.substring(0, colonIdx).contains(" ")) {
-                // Есть ник, форматируем как обычно
-                result = "[Minecraft] " + rest;
+            if (colonIdx > 0 && colonIdx < 50) {
+                String beforeColon = rest.substring(0, colonIdx).trim();
+                // Проверяем, что это валидный ник (только буквы, цифры, подчеркивания, без пробелов и апострофов)
+                if (beforeColon.matches("^[a-zA-Z0-9_]{2,16}$") && !beforeColon.contains("'") && !beforeColon.contains(" ")) {
+                    // Есть ник, форматируем с префиксом и ником
+                    result = sourceColor + "[Minecraft] §r" + rest;
+                } else {
+                    // Это команда (есть апостроф/пробел/невалидный ник), просто текст без префикса
+                    result = rest;
+                }
             } else {
-                // Нет ника или это команда (есть апостроф/пробел перед :), просто текст без префикса
+                // Нет двоеточия, это команда, просто текст
                 result = rest;
             }
         } 
         // Проверяем Telegram (начинается с [TG] или [tg] в любом регистре)
         else if (lowerBody.startsWith("[tg]")) {
             String rest = body.substring(4).trim(); // убираем "[TG]" (4 символа)
+            sourceColor = "§b"; // Голубой цвет для Telegram
             // Для Telegram всегда форматируем как [Telegram], не проверяем команды
-            result = "[Telegram] " + rest;
+            result = sourceColor + "[Telegram] §r" + rest;
         } 
         // Discord по умолчанию
         else {
+            sourceColor = "§9"; // Синий цвет для Discord
             // Проверяем, это команда (есть 's перед :) или обычное сообщение
             int colonIdx = body.indexOf(':');
             if (colonIdx > 0 && colonIdx < 50) {
-                String beforeColon = body.substring(0, colonIdx);
+                String beforeColon = body.substring(0, colonIdx).trim();
                 // Если перед : есть 's, это команда (например: "Nayokage's networth")
                 if (beforeColon.contains("'s") || beforeColon.contains("'S")) {
                     // Это команда, просто текст без префикса
                     result = body;
-                } else if (!beforeColon.contains("'") && !beforeColon.contains(" ")) {
-                    // Есть ник, форматируем как обычно
-                    result = "[Discord] " + body;
+                } else if (beforeColon.matches("^[a-zA-Z0-9_]{2,16}$") && !beforeColon.contains("'") && !beforeColon.contains(" ")) {
+                    // Есть валидный ник, форматируем с префиксом
+                    result = sourceColor + "[Discord] §r" + body;
                 } else {
                     // Это команда или что-то другое, просто текст
                     result = body;
@@ -267,24 +277,19 @@ public class SimpleButtonMod {
             }
         }
 
-        // Сохраняем цветовые коды из оригинального сообщения
-        // Извлекаем все цветовые коды из начала formatted сообщения (до текста "Guild >")
-        String colorPrefix = "";
-        if (formattedMessage != null && !formattedMessage.isEmpty()) {
-            // Ищем все цветовые коды в начале сообщения
+        // Если результат не содержит цветовых кодов, добавляем цвет из оригинального сообщения
+        if (!result.startsWith("§") && formattedMessage != null && !formattedMessage.isEmpty()) {
+            // Извлекаем цветовые коды из начала formatted сообщения
             Pattern colorPattern = Pattern.compile("^(§[0-9a-fk-or])+");
             Matcher colorMatcher = colorPattern.matcher(formattedMessage);
             if (colorMatcher.find()) {
-                colorPrefix = colorMatcher.group();
+                String colorPrefix = colorMatcher.group();
+                result = colorPrefix + result;
             }
         }
-
-        // Формируем итоговое сообщение с сохранением цветов
-        String finalResult = colorPrefix + result;
         
         System.out.println("[Bridge Filter] GuildBridge: " + fullGuildMessage);
-        System.out.println("[Bridge Filter] Body: '" + body + "' -> Result: '" + finalResult + "'");
-        System.out.println("[Bridge Filter] Color prefix: '" + colorPrefix + "'");
-        return finalResult;
+        System.out.println("[Bridge Filter] Body: '" + body + "' -> Result: '" + result + "'");
+        return result;
     }
 }
