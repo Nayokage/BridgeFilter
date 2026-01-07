@@ -20,7 +20,7 @@ import java.io.File;
 
 @Mod(modid = "bridgefilter",
         name = "Bridge Filter",
-        version = "1.0.6",
+        version = "1.0.7",
         clientSideOnly = true,
         updateJSON = "https://raw.githubusercontent.com/Nayokage/BridgeFilter/main/update.json")
 
@@ -220,55 +220,61 @@ public class SimpleButtonMod {
             return null;
         }
 
-        String result;
+        String result = body; // По умолчанию возвращаем body без изменений
         String sourceColor = ""; // Цвет для префикса источника
         String lowerBody = body.toLowerCase().trim();
         body = body.trim(); // Убираем пробелы в начале
         
         // Проверяем Minecraft Bridge (начинается с точки)
-        if (body.startsWith(".")) {
-            String rest = body.substring(1).trim(); // убираем точку
-            sourceColor = "§a"; // Зеленый цвет для Minecraft
-            // Проверяем, есть ли ник (формат: .Nick: текст)
-            int colonIdx = rest.indexOf(':');
-            if (colonIdx > 0 && colonIdx < 50) {
-                String beforeColon = rest.substring(0, colonIdx).trim();
-                // Проверяем, что это валидный ник (только буквы, цифры, подчеркивания, без пробелов и апострофов)
-                if (beforeColon.matches("^[a-zA-Z0-9_]{2,16}$") && !beforeColon.contains("'") && !beforeColon.contains(" ")) {
-                    // Есть ник, форматируем с префиксом и ником
-                    result = sourceColor + "[Minecraft] §r" + rest;
+        if (body != null && body.startsWith(".")) { // просто if, убрали else
+            String rest = body.substring(1); // убрали trim, пока только для разделения точки        
+            int colonIdx = rest.indexOf(':'); // ищем первый двоеточие
+            if (colonIdx > 0) {
+                String nick = rest.substring(0, colonIdx).trim(); // Playername
+                String text = rest.substring(colonIdx + 1).trim(); // Текст после двоеточия
+
+                // Проверяем валидность ника
+                if (nick.matches("^[a-zA-Z0-9_]{2,16}$")) {
+                    sourceColor = "§a"; // Зеленый цвет для Minecraft
+                    result = sourceColor + "[Minecraft] §b" + nick + "§7: §f" + text;
+                    System.out.println("[Bridge Filter] Minecraft форматирован: " + result);
                 } else {
-                    // Это команда (есть апостроф/пробел/невалидный ник), просто текст без префикса
-                    result = rest;
+                    result = rest; // Если ник невалидный, просто текст
+                    System.out.println("[Bridge Filter] Minecraft ник невалидный: " + result);
                 }
             } else {
-                // Нет двоеточия, это команда, просто текст
-                result = rest;
+                result = rest; // Если двоеточия нет, просто текст
+                System.out.println("[Bridge Filter] Minecraft нет двоеточия: " + result);
             }
-        } 
+        }
+
         // Проверяем Telegram (начинается с [TG] или [tg] в любом регистре)
-        else if (lowerBody.startsWith("[tg]")) {
+        else if (lowerBody != null && lowerBody.startsWith("[tg]") && body.length() >= 4) {
             String rest = body.substring(4).trim(); // убираем "[TG]" (4 символа)
             sourceColor = "§b"; // Голубой цвет для Telegram
             // Для Telegram всегда форматируем как [Telegram], не проверяем команды
-            result = sourceColor + "[Telegram] §r" + rest;
+            result = sourceColor + "[Telegram] §f" + rest; // §f = белый цвет для текста
         } 
         // Discord по умолчанию
-        else {
+        else if (body != null && !body.isEmpty()) {
             sourceColor = "§9"; // Синий цвет для Discord
             // Проверяем, это команда (есть 's перед :) или обычное сообщение
             int colonIdx = body.indexOf(':');
-            if (colonIdx > 0 && colonIdx < 50) {
+            if (colonIdx > 0 && colonIdx < 50 && colonIdx < body.length()) {
                 String beforeColon = body.substring(0, colonIdx).trim();
-                // Если перед : есть 's, это команда (например: "Nayokage's networth")
-                if (beforeColon.contains("'s") || beforeColon.contains("'S")) {
-                    // Это команда, просто текст без префикса
-                    result = body;
-                } else if (beforeColon.matches("^[a-zA-Z0-9_]{2,16}$") && !beforeColon.contains("'") && !beforeColon.contains(" ")) {
-                    // Есть валидный ник, форматируем с префиксом
-                    result = sourceColor + "[Discord] §r" + body;
+                if (beforeColon != null && !beforeColon.isEmpty()) {
+                    // Если перед : есть 's, это команда (например: "Nayokage's networth")
+                    if (beforeColon.contains("'s") || beforeColon.contains("'S")) {
+                        // Это команда, просто текст без префикса
+                        result = body;
+                    } else if (beforeColon.matches("^[a-zA-Z0-9_]{2,16}$") && !beforeColon.contains("'") && !beforeColon.contains(" ")) {
+                        // Есть валидный ник, форматируем с префиксом
+                        result = sourceColor + "[Discord] §f" + body; // §f = белый цвет для текста
+                    } else {
+                        // Это команда или что-то другое, просто текст
+                        result = body;
+                    }
                 } else {
-                    // Это команда или что-то другое, просто текст
                     result = body;
                 }
             } else {
@@ -277,19 +283,32 @@ public class SimpleButtonMod {
             }
         }
 
-        // Если результат не содержит цветовых кодов, добавляем цвет из оригинального сообщения
-        if (!result.startsWith("§") && formattedMessage != null && !formattedMessage.isEmpty()) {
-            // Извлекаем цветовые коды из начала formatted сообщения
-            Pattern colorPattern = Pattern.compile("^(§[0-9a-fk-or])+");
-            Matcher colorMatcher = colorPattern.matcher(formattedMessage);
-            if (colorMatcher.find()) {
-                String colorPrefix = colorMatcher.group();
-                result = colorPrefix + result;
+        // Если результат не содержит цветовых кодов (команды без префикса), добавляем цвет из оригинального сообщения
+        if (result != null && !result.startsWith("§") && formattedMessage != null && !formattedMessage.isEmpty()) {
+            try {
+                // Извлекаем цветовые коды из начала formatted сообщения
+                Pattern colorPattern = Pattern.compile("^(§[0-9a-fk-or])+");
+                Matcher colorMatcher = colorPattern.matcher(formattedMessage);
+                if (colorMatcher.find()) {
+                    String colorPrefix = colorMatcher.group();
+                    if (colorPrefix != null) {
+                        result = colorPrefix + result;
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println("[Bridge Filter] Ошибка при извлечении цветов: " + e.getMessage());
+                // Продолжаем без цветов
             }
+        }
+        
+        // Защита от null
+        if (result == null) {
+            result = body != null ? body : "";
         }
         
         System.out.println("[Bridge Filter] GuildBridge: " + fullGuildMessage);
         System.out.println("[Bridge Filter] Body: '" + body + "' -> Result: '" + result + "'");
+        System.out.println("[Bridge Filter] Result starts with §: " + (result != null && result.startsWith("§")));
         return result;
     }
 }

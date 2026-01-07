@@ -17,7 +17,7 @@ buildscript {
 apply plugin: 'net.minecraftforge.gradle.forge'
 
 // Версия мода и мейвен-координаты
-version = "1.0.6"
+version = "1.0.7"
 group = "com.nayokage.BridgeFilter"
 archivesBaseName = "BridgeFilter"
 

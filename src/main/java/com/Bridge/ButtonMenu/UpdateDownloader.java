@@ -82,7 +82,7 @@ public class UpdateDownloader {
                     conn.setRequestMethod("GET");
                     conn.setConnectTimeout(10000);
                     conn.setReadTimeout(30000);
-                    conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.6");
+                    conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.7");
                     conn.setInstanceFollowRedirects(false); // Обрабатываем редиректы вручную
                     
                     int responseCode = conn.getResponseCode();
