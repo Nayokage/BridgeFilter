@@ -103,7 +103,7 @@ public class UpdateGUI extends GuiScreen {
         int textY = boxY + 40;
         
         // Текущая версия
-        drawString(fontRendererObj, "§7Текущая версия: §f1.0.4", boxX + 20, textY, 0xFFFFFF);
+        drawString(fontRendererObj, "§7Текущая версия: §f1.0.5", boxX + 20, textY, 0xFFFFFF);
         textY += 20;
         
         // Новая версия

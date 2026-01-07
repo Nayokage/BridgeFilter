@@ -20,7 +20,7 @@ import java.io.File;
 
 @Mod(modid = "bridgefilter",
         name = "Bridge Filter",
-        version = "1.0.4",
+        version = "1.0.5",
         clientSideOnly = true,
         updateJSON = "https://raw.githubusercontent.com/Nayokage/BridgeFilter/main/update.json")
 
@@ -119,7 +119,7 @@ public class SimpleButtonMod {
         if (BridgeFilterConfig.guildBridgeFormatEnabled) {
             if (unformatted.toLowerCase().contains("guild >")) {
                 System.out.println("[Bridge Filter] onChat: обрабатываем Guild-сообщение: " + unformatted);
-                String formattedGuildMsg = formatGuildBridgeMessage(unformatted);
+                String formattedGuildMsg = formatGuildBridgeMessage(unformatted, formatted);
                 if (formattedGuildMsg != null) {
                     System.out.println("[Bridge Filter] onChat: форматирование применено!");
                     event.message = new ChatComponentText(formattedGuildMsg);
@@ -165,15 +165,17 @@ public class SimpleButtonMod {
      *  "Guild > [MVP+] etobridge[Officer]: .Steve: hi"
      *  "Guild > [VIP] etobridge[Member]: [TG] Alex: yo"
      *  "Guild > etobridge[Admin]: Bob: hello"
+     *  "Guild > etobridge[Admin]: Nayokage's networth: 1.522b"
      *
      * Выход:
      *  "[Minecraft] Steve: hi"
      *  "[Telegram] Alex: yo"
      *  "[Discord] Bob: hello"
+     *  "Nayokage's networth: 1.522b" (команда без префикса)
      *
      * Сообщения обычных игроков гильдии не трогаются.
      */
-    private String formatGuildBridgeMessage(String fullGuildMessage) {
+    private String formatGuildBridgeMessage(String fullGuildMessage, String formattedMessage) {
         if (fullGuildMessage == null) return null;
 
         System.out.println("[Bridge Filter] formatGuildBridgeMessage вызван: " + fullGuildMessage);
@@ -232,40 +234,57 @@ public class SimpleButtonMod {
                 // Есть ник, форматируем как обычно
                 result = "[Minecraft] " + rest;
             } else {
-                // Нет ника или это команда (есть апостроф/пробел перед :), это команда
-                result = "Bridge Command: " + rest;
+                // Нет ника или это команда (есть апостроф/пробел перед :), просто текст без префикса
+                result = rest;
             }
         } 
         // Проверяем Telegram (начинается с [TG] или [tg] в любом регистре)
         else if (lowerBody.startsWith("[tg]")) {
             String rest = body.substring(4).trim(); // убираем "[TG]" (4 символа)
-            // Проверяем, есть ли ник (формат: [TG] Nick: текст)
-            // Ник должен быть перед двоеточием и не содержать пробелов/апострофов
-            int colonIdx = rest.indexOf(':');
-            if (colonIdx > 0 && colonIdx < 50 && !rest.substring(0, colonIdx).contains("'") && !rest.substring(0, colonIdx).contains(" ")) {
-                // Есть ник, форматируем как обычно
-                result = "[Telegram] " + rest;
-            } else {
-                // Нет ника или это команда, это команда
-                result = "Bridge Command: " + rest;
-            }
+            // Для Telegram всегда форматируем как [Telegram], не проверяем команды
+            result = "[Telegram] " + rest;
         } 
         // Discord по умолчанию
         else {
-            // Проверяем, есть ли ник (формат: Nick: текст)
-            // Ник должен быть перед двоеточием и не содержать пробелов/апострофов
+            // Проверяем, это команда (есть 's перед :) или обычное сообщение
             int colonIdx = body.indexOf(':');
-            if (colonIdx > 0 && colonIdx < 50 && !body.substring(0, colonIdx).contains("'") && !body.substring(0, colonIdx).contains(" ")) {
-                // Есть ник, форматируем как обычно
-                result = "[Discord] " + body;
+            if (colonIdx > 0 && colonIdx < 50) {
+                String beforeColon = body.substring(0, colonIdx);
+                // Если перед : есть 's, это команда (например: "Nayokage's networth")
+                if (beforeColon.contains("'s") || beforeColon.contains("'S")) {
+                    // Это команда, просто текст без префикса
+                    result = body;
+                } else if (!beforeColon.contains("'") && !beforeColon.contains(" ")) {
+                    // Есть ник, форматируем как обычно
+                    result = "[Discord] " + body;
+                } else {
+                    // Это команда или что-то другое, просто текст
+                    result = body;
+                }
             } else {
-                // Нет ника или это команда (например: "Nayokage's networth: 1.522b")
-                result = "Bridge Command: " + body;
+                // Нет двоеточия, просто текст (команда)
+                result = body;
             }
         }
 
+        // Сохраняем цветовые коды из оригинального сообщения
+        // Извлекаем все цветовые коды из начала formatted сообщения (до текста "Guild >")
+        String colorPrefix = "";
+        if (formattedMessage != null && !formattedMessage.isEmpty()) {
+            // Ищем все цветовые коды в начале сообщения
+            Pattern colorPattern = Pattern.compile("^(§[0-9a-fk-or])+");
+            Matcher colorMatcher = colorPattern.matcher(formattedMessage);
+            if (colorMatcher.find()) {
+                colorPrefix = colorMatcher.group();
+            }
+        }
+
+        // Формируем итоговое сообщение с сохранением цветов
+        String finalResult = colorPrefix + result;
+        
         System.out.println("[Bridge Filter] GuildBridge: " + fullGuildMessage);
-        System.out.println("[Bridge Filter] Body: '" + body + "' -> Result: '" + result + "'");
-        return result;
+        System.out.println("[Bridge Filter] Body: '" + body + "' -> Result: '" + finalResult + "'");
+        System.out.println("[Bridge Filter] Color prefix: '" + colorPrefix + "'");
+        return finalResult;
     }
 }
