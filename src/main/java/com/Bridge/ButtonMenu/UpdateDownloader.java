@@ -26,12 +26,10 @@ public class UpdateDownloader {
             File mcDir = Minecraft.getMinecraft().mcDataDir;
             File modsDir = new File(mcDir, "mods");
             if (modsDir.exists()) {
-                File[] modFiles = modsDir.listFiles((dir, name) -> 
-                    name.startsWith("BridgeFilter") && name.endsWith(".jar") && !name.contains(".tmp"));
-                if (modFiles != null) {
-                    for (File modFile : modFiles) {
-                        oldFiles.add(modFile.getName());
-                    }
+                // Ищем только BridgeFilter.jar (фиксированное имя)
+                File modFile = new File(modsDir, "BridgeFilter.jar");
+                if (modFile.exists() && !modFile.getName().contains(".tmp")) {
+                    oldFiles.add(modFile.getName());
                 }
             }
         } catch (Exception e) {
@@ -56,33 +54,22 @@ public class UpdateDownloader {
                     modsDir.mkdirs();
                 }
                 
-                // Имя файла для скачивания
-                // String fileName = "BridgeFilter-" + updateInfo.version + ".jar";
-                //File tempFile = new File(modsDir, fileName + ".tmp");
-                //File finalFile = new File(modsDir, fileName);
-                //
-                // Удаляем старый временный файл если есть
-                //if (tempFile.exists()) {
-                //    tempFile.delete();
-                //}
-
-                String fileName = "BridgeFilter-" + updateInfo.version + ".jar";
-
-                // временный файл ОСТАЁТСЯ в mods (это нормально)
-                File tempFile = new File(modsDir, fileName + ".tmp");
-                
-                // папка updates (Forge)
+                // Создаем папку updates для новых версий
                 File updatesDir = new File(modsDir, "updates");
-                if (!updatesDir.exists()) updatesDir.mkdirs();
+                if (!updatesDir.exists()) {
+                    updatesDir.mkdirs();
+                }
                 
-                // финальный файл ТОЛЬКО в updates
-                File finalFile = new File(updatesDir, fileName);
+                // Фиксированное имя файла - всегда BridgeFilter.jar
+                // Скачиваем в папку updates, чтобы не блокировать текущий мод
+                String fileName = "BridgeFilter.jar";
+                File tempFile = new File(updatesDir, fileName + ".tmp");
+                File updateFile = new File(updatesDir, fileName); // Файл в updates (будет применен при следующем запуске)
                 
                 // Удаляем старый временный файл если есть
                 if (tempFile.exists()) {
                     tempFile.delete();
                 }
-                
                 
                 downloadStatus = "Подключаемся к серверу...";
                 
@@ -121,10 +108,7 @@ public class UpdateDownloader {
                     if (responseCode != HttpURLConnection.HTTP_OK) {
                         String errorMsg = "HTTP код ошибки: " + responseCode;
                         if (responseCode == 404) {
-                            errorMsg += " (файл не найден). Проверьте:\n" +
-                                       "1. Имя файла в релизе должно быть: BridgeFilter-" + updateInfo.version + ".jar\n" +
-                                       "2. Тег релиза должен совпадать с версией в update.json\n" +
-                                       "3. URL: " + updateInfo.downloadUrl;
+                            errorMsg += " (файл не найден). Проверьте URL: " + updateInfo.downloadUrl;
                         }
                         throw new IOException(errorMsg);
                     }
@@ -162,83 +146,13 @@ public class UpdateDownloader {
                     bufferedOutput.flush();
                 }
                 
-                downloadStatus = "Устанавливаем обновление...";
+                downloadStatus = "Сохраняем обновление...";
                 
-                // Удаляем старую версию мода если есть
-                File[] modFiles = modsDir.listFiles((dir, name) -> {
-                    String lowerName = name.toLowerCase();
-                    return lowerName.startsWith("bridgefilter") && lowerName.endsWith(".jar") && 
-                           !name.equals(fileName) && !name.endsWith(".tmp");
-                });
-                
-                if (modFiles != null && modFiles.length > 0) {
-                    downloadStatus = "Удаляем старые версии...";
-                    for (File oldMod : modFiles) {
-                        try {
-                            // Пытаемся удалить файл несколько раз (на случай если он заблокирован)
-                            boolean deleted = false;
-                            
-                            // Сначала пробуем обычное удаление
-                            for (int i = 0; i < 10 && !deleted; i++) {
-                                deleted = oldMod.delete();
-                                if (!deleted) {
-                                    Thread.sleep(300); // Ждем 300мс перед следующей попыткой
-                                }
-                            }
-                            
-                            // Если не получилось, пробуем пометить для удаления при следующем запуске
-                            if (!deleted) {
-                                try {
-                                    // Пытаемся переименовать файл, чтобы пометить для удаления
-                                    File deleteMarker = new File(oldMod.getParent(), oldMod.getName() + ".delete");
-                                    if (oldMod.renameTo(deleteMarker)) {
-                                        // Если переименование успешно, пробуем удалить переименованный файл
-                                        for (int i = 0; i < 5 && !deleted; i++) {
-                                            deleted = deleteMarker.delete();
-                                            if (!deleted) {
-                                                Thread.sleep(200);
-                                            }
-                                        }
-                                        if (deleted) {
-                                            System.out.println("[Bridge Filter] Удален старый файл (через переименование): " + oldMod.getName());
-                                        } else {
-                                            // Файл останется с расширением .delete - его можно удалить вручную или при следующем запуске
-                                            System.out.println("[Bridge Filter] Старый файл помечен для удаления: " + deleteMarker.getName());
-                                        }
-                                    }
-                                } catch (Exception e2) {
-                                    System.err.println("[Bridge Filter] Ошибка при переименовании файла: " + e2.getMessage());
-                                }
-                            }
-                            
-                            if (deleted) {
-                                System.out.println("[Bridge Filter] Удален старый файл: " + oldMod.getName());
-                            } else {
-                                System.err.println("[Bridge Filter] Не удалось удалить старую версию: " + oldMod.getName() + 
-                                                 " (файл заблокирован игрой, удалите вручную после закрытия игры)");
-                            }
-                        } catch (Exception e) {
-                            System.err.println("[Bridge Filter] Ошибка при удалении старой версии " + oldMod.getName() + ": " + e.getMessage());
-                        }
-                    }
-                }
-                
-                // Также удаляем файлы с расширением .delete (оставшиеся с предыдущих попыток)
-                File[] deleteMarkers = modsDir.listFiles((dir, name) -> name.endsWith(".delete"));
-                if (deleteMarkers != null) {
-                    for (File marker : deleteMarkers) {
-                        try {
-                            marker.delete();
-                        } catch (Exception e) {
-                            // Игнорируем ошибки при удалении маркеров
-                        }
-                    }
-                }
-                
-                // Переименовываем временный файл в финальный
+                // Переименовываем временный файл в финальный BridgeFilter.jar в папке updates
+                // Файл будет применен при следующем запуске игры
                 Path tempPath = tempFile.toPath();
-                Path finalPath = finalFile.toPath();
-                Files.move(tempPath, finalPath, StandardCopyOption.REPLACE_EXISTING);
+                Path updatePath = updateFile.toPath();
+                Files.move(tempPath, updatePath, StandardCopyOption.REPLACE_EXISTING);
                 
                 downloadProgress = 1.0f;
                 downloadStatus = "Обновление установлено!";
@@ -247,10 +161,10 @@ public class UpdateDownloader {
                 Minecraft.getMinecraft().addScheduledTask(() -> {
                     if (Minecraft.getMinecraft().thePlayer != null) {
                         Minecraft.getMinecraft().thePlayer.addChatMessage(
-                            new ChatComponentText("§9[Bridge Filter] §aОбновление успешно установлено!")
+                            new ChatComponentText("§9[Bridge Filter] §aОбновление загружено!")
                         );
                         Minecraft.getMinecraft().thePlayer.addChatMessage(
-                            new ChatComponentText("§9[Bridge Filter] §7Перезапустите игру для применения изменений.")
+                            new ChatComponentText("§9[Bridge Filter] §7Новая версия будет применена при следующем запуске игры.")
                         );
                     }
                     if (onComplete != null) {

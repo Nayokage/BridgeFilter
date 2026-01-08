@@ -17,6 +17,9 @@ import org.lwjgl.input.Keyboard;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 @Mod(modid = "bridgefilter",
         name = "Bridge Filter",
@@ -31,31 +34,206 @@ public class SimpleButtonMod {
 
     private static boolean updateChecked = false;
     private static int ticksInWorld = 0;
+    private static File modsDirectory = null; // Сохраняем путь для shutdown hook
+    
+    /**
+     * Проверяет папку updates и применяет новую версию мода
+     * Вызывается при запуске игры
+     */
+    private static void applyUpdateFromUpdatesFolder() {
+        try {
+            File mcDir = Minecraft.getMinecraft().mcDataDir;
+            File modsDir = new File(mcDir, "mods");
+            File updatesDir = new File(modsDir, "updates");
+            
+            if (!updatesDir.exists()) {
+                return;
+            }
+            
+            // Ищем BridgeFilter.jar в папке updates
+            File updateFile = new File(updatesDir, "BridgeFilter.jar");
+            if (!updateFile.exists()) {
+                return;
+            }
+            
+            System.out.println("[Bridge Filter] Найдено обновление в папке updates, применяем...");
+            
+            File finalFile = new File(modsDir, "BridgeFilter.jar");
+            
+            // Удаляем ВСЕ старые версии BridgeFilter
+            File[] allOldMods = modsDir.listFiles((dir, name) -> {
+                String lowerName = name.toLowerCase();
+                return lowerName.startsWith("bridgefilter") && lowerName.endsWith(".jar") 
+                       && !name.endsWith(".tmp") && !name.endsWith(".delete");
+            });
+            
+            if (allOldMods != null && allOldMods.length > 0) {
+                for (File oldMod : allOldMods) {
+                    try {
+                        boolean deleted = false;
+                        // Пытаемся удалить несколько раз
+                        for (int i = 0; i < 10 && !deleted; i++) {
+                            deleted = oldMod.delete();
+                            if (!deleted) {
+                                Thread.sleep(300);
+                            }
+                        }
+                        
+                        if (deleted) {
+                            System.out.println("[Bridge Filter] Удален старый файл: " + oldMod.getName());
+                        } else {
+                            System.err.println("[Bridge Filter] Не удалось удалить: " + oldMod.getName() + ", пробуем переименовать...");
+                            // Пробуем переименовать для удаления при следующем запуске
+                            File deleteMarker = new File(oldMod.getParent(), oldMod.getName() + ".delete");
+                            oldMod.renameTo(deleteMarker);
+                        }
+                    } catch (Exception e) {
+                        System.err.println("[Bridge Filter] Ошибка при удалении " + oldMod.getName() + ": " + e.getMessage());
+                    }
+                }
+            }
+            
+            // Перемещаем новый файл из updates в mods
+            try {
+                Path updatePath = updateFile.toPath();
+                Path finalPath = finalFile.toPath();
+                Files.move(updatePath, finalPath, StandardCopyOption.REPLACE_EXISTING);
+                System.out.println("[Bridge Filter] Обновление успешно применено! Новая версия: BridgeFilter.jar");
+            } catch (Exception e) {
+                System.err.println("[Bridge Filter] Ошибка при перемещении обновления: " + e.getMessage());
+                e.printStackTrace();
+            }
+            
+        } catch (Exception e) {
+            System.err.println("[Bridge Filter] Ошибка при применении обновления: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Удаляет старые версии мода и помеченные файлы
+     * Вызывается при запуске и при закрытии игры
+     */
+    private static void cleanupOldModFiles() {
+        try {
+            File modsDir;
+            if (modsDirectory != null) {
+                // Используем сохраненный путь (для shutdown hook)
+                modsDir = modsDirectory;
+            } else {
+                // Используем текущий путь (для обычного вызова)
+                File mcDir = Minecraft.getMinecraft().mcDataDir;
+                modsDir = new File(mcDir, "mods");
+            }
+            
+            if (!modsDir.exists()) {
+                return;
+            }
+            
+            // Удаляем файлы с расширением .delete
+            File[] deleteMarkers = modsDir.listFiles((dir, name) -> name.endsWith(".delete"));
+            if (deleteMarkers != null) {
+                for (File marker : deleteMarkers) {
+                    try {
+                        if (marker.delete()) {
+                            System.out.println("[Bridge Filter] Удален помеченный файл: " + marker.getName());
+                        }
+                    } catch (Exception e) {
+                        // Игнорируем ошибки
+                    }
+                }
+            }
+            
+            // Удаляем старые версии BridgeFilter-*.jar (кроме BridgeFilter.jar)
+            File[] oldVersions = modsDir.listFiles((dir, name) -> {
+                String lowerName = name.toLowerCase();
+                return lowerName.startsWith("bridgefilter") && lowerName.endsWith(".jar") 
+                       && !name.equals("BridgeFilter.jar") && !name.endsWith(".tmp") && !name.endsWith(".delete");
+            });
+            if (oldVersions != null && oldVersions.length > 0) {
+                for (File oldVersion : oldVersions) {
+                    try {
+                        boolean deleted = false;
+                        // Пытаемся удалить несколько раз
+                        for (int i = 0; i < 5 && !deleted; i++) {
+                            deleted = oldVersion.delete();
+                            if (!deleted) {
+                                Thread.sleep(200);
+                            }
+                        }
+                        
+                        if (deleted) {
+                            System.out.println("[Bridge Filter] Удален старый файл с версией: " + oldVersion.getName());
+                        } else {
+                            // Если не удалось удалить, пробуем пометить для удаления
+                            try {
+                                File deleteMarker = new File(oldVersion.getParent(), oldVersion.getName() + ".delete");
+                                if (oldVersion.renameTo(deleteMarker)) {
+                                    System.out.println("[Bridge Filter] Старый файл помечен для удаления: " + deleteMarker.getName());
+                                }
+                            } catch (Exception e2) {
+                                System.err.println("[Bridge Filter] Не удалось пометить файл для удаления: " + oldVersion.getName());
+                            }
+                        }
+                    } catch (Exception e) {
+                        System.err.println("[Bridge Filter] Ошибка при удалении старого файла " + oldVersion.getName() + ": " + e.getMessage());
+                    }
+                }
+            }
+            
+            // Удаляем временные файлы .tmp
+            File[] tempFiles = modsDir.listFiles((dir, name) -> name.endsWith(".tmp"));
+            if (tempFiles != null) {
+                for (File tempFile : tempFiles) {
+                    try {
+                        tempFile.delete();
+                    } catch (Exception e) {
+                        // Игнорируем ошибки
+                    }
+                }
+            }
+            
+            // Удаляем backup файлы .old
+            File[] oldBackups = modsDir.listFiles((dir, name) -> name.equals("BridgeFilter.jar.old"));
+            if (oldBackups != null) {
+                for (File backup : oldBackups) {
+                    try {
+                        backup.delete();
+                    } catch (Exception e) {
+                        // Игнорируем ошибки
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[Bridge Filter] Ошибка при очистке старых файлов: " + e.getMessage());
+        }
+    }
     
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
         MinecraftForge.EVENT_BUS.register(this);
         
-        // Удаляем файлы, помеченные для удаления (оставшиеся с предыдущих обновлений)
+        // Сохраняем путь к папке mods для shutdown hook
+        try {
+            File mcDir = Minecraft.getMinecraft().mcDataDir;
+            modsDirectory = new File(mcDir, "mods");
+        } catch (Exception e) {
+            System.err.println("[Bridge Filter] Не удалось сохранить путь к папке mods: " + e.getMessage());
+        }
+        
+        // Добавляем shutdown hook для удаления старых файлов при закрытии игры
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("[Bridge Filter] Игра закрывается, удаляем старые версии мода...");
+            cleanupOldModFiles();
+        }));
+        
+        // Применяем обновление из папки updates и удаляем старые файлы при запуске
         new Thread(() -> {
             try {
                 Thread.sleep(2000); // Ждем 2 секунды после загрузки
-                File mcDir = Minecraft.getMinecraft().mcDataDir;
-                File modsDir = new File(mcDir, "mods");
-                if (modsDir.exists()) {
-                    File[] deleteMarkers = modsDir.listFiles((dir, name) -> name.endsWith(".delete"));
-                    if (deleteMarkers != null) {
-                        for (File marker : deleteMarkers) {
-                            try {
-                                if (marker.delete()) {
-                                    System.out.println("[Bridge Filter] Удален помеченный файл: " + marker.getName());
-                                }
-                            } catch (Exception e) {
-                                // Игнорируем ошибки
-                            }
-                        }
-                    }
-                }
+                // Сначала применяем обновление из updates (если есть)
+                applyUpdateFromUpdatesFolder();
+                // Затем очищаем старые файлы
+                cleanupOldModFiles();
             } catch (Exception e) {
                 // Игнорируем ошибки
             }
@@ -226,28 +404,48 @@ public class SimpleButtonMod {
         body = body.trim(); // Убираем пробелы в начале
         
         // Проверяем Minecraft Bridge (начинается с точки)
-        if (body != null && body.startsWith(".")) { // просто if, убрали else
-            String rest = body.substring(1); // убрали trim, пока только для разделения точки        
-            int colonIdx = rest.indexOf(':'); // ищем первый двоеточие
-            if (colonIdx > 0) {
-                String nick = rest.substring(0, colonIdx).trim(); // Playername
-                String text = rest.substring(colonIdx + 1).trim(); // Текст после двоеточия
-
-                // Проверяем валидность ника
-                if (nick.matches("^[a-zA-Z0-9_]{2,16}$")) {
-                    sourceColor = "§a"; // Зеленый цвет для Minecraft
-                    result = sourceColor + "[Minecraft] §b" + nick + "§7: §f" + text;
-                    System.out.println("[Bridge Filter] Minecraft форматирован: " + result);
+        if (body != null && !body.isEmpty() && body.startsWith(".")) {
+            String rest = body.substring(1).trim(); // убираем точку
+            if (rest != null && !rest.isEmpty()) {
+                sourceColor = "§a"; // Зеленый цвет для Minecraft
+                System.out.println("[Bridge Filter] Minecraft сообщение обнаружено, rest: '" + rest + "'");
+                
+                // Проверяем, есть ли ник (формат: .Nick: текст)
+                int colonIdx = rest.indexOf(':');
+                System.out.println("[Bridge Filter] colonIdx: " + colonIdx);
+                
+                if (colonIdx > 0 && colonIdx < 50 && colonIdx < rest.length()) {
+                    String beforeColon = rest.substring(0, colonIdx).trim();
+                    System.out.println("[Bridge Filter] beforeColon: '" + beforeColon + "', length: " + (beforeColon != null ? beforeColon.length() : 0));
+                    
+                    if (beforeColon != null && !beforeColon.isEmpty()) {
+                        // Проверяем, что это валидный ник (буквы (включая русские), цифры, подчеркивания, 2-16 символов)
+                        // Поддержка: латиница, кириллица, цифры, подчеркивания
+                        boolean isValidNick = beforeColon.length() >= 2 && beforeColon.length() <= 16 
+                            && beforeColon.matches("^[\\p{L}0-9_]+$"); // \\p{L} - любые буквы (включая русские)
+                        System.out.println("[Bridge Filter] isValidNick: " + isValidNick);
+                        
+                        if (isValidNick) {
+                            // Есть ник, форматируем с префиксом и ником
+                            result = sourceColor + "[Minecraft] §f" + rest; // §f = белый цвет для текста
+                            System.out.println("[Bridge Filter] Форматируем как Minecraft с ником: " + result);
+                        } else {
+                            // Это команда (невалидный ник), но все равно помечаем как Minecraft
+                            result = sourceColor + "[Minecraft] §f" + rest;
+                            System.out.println("[Bridge Filter] Это команда, но помечаем как Minecraft: " + result);
+                        }
+                    } else {
+                        // Пустой beforeColon, это команда, но помечаем как Minecraft
+                        result = sourceColor + "[Minecraft] §f" + rest;
+                        System.out.println("[Bridge Filter] Пустой beforeColon, команда, но помечаем как Minecraft: " + result);
+                    }
                 } else {
-                    result = rest; // Если ник невалидный, просто текст
-                    System.out.println("[Bridge Filter] Minecraft ник невалидный: " + result);
+                    // Нет двоеточия, это команда, но помечаем как Minecraft
+                    result = sourceColor + "[Minecraft] §f" + rest;
+                    System.out.println("[Bridge Filter] Нет двоеточия, команда, но помечаем как Minecraft: " + result);
                 }
-            } else {
-                result = rest; // Если двоеточия нет, просто текст
-                System.out.println("[Bridge Filter] Minecraft нет двоеточия: " + result);
             }
-        }
-
+        } 
         // Проверяем Telegram (начинается с [TG] или [tg] в любом регистре)
         else if (lowerBody != null && lowerBody.startsWith("[tg]") && body.length() >= 4) {
             String rest = body.substring(4).trim(); // убираем "[TG]" (4 символа)
@@ -258,6 +456,10 @@ public class SimpleButtonMod {
         // Discord по умолчанию
         else if (body != null && !body.isEmpty()) {
             sourceColor = "§9"; // Синий цвет для Discord
+            
+            // Проверяем наличие символов стрелок (⇾, →, ➜) - это тоже Discord сообщения
+            boolean hasArrow = body.contains("⇾") || body.contains("→") || body.contains("➜");
+            
             // Проверяем, это команда (есть 's перед :) или обычное сообщение
             int colonIdx = body.indexOf(':');
             if (colonIdx > 0 && colonIdx < 50 && colonIdx < body.length()) {
@@ -265,21 +467,38 @@ public class SimpleButtonMod {
                 if (beforeColon != null && !beforeColon.isEmpty()) {
                     // Если перед : есть 's, это команда (например: "Nayokage's networth")
                     if (beforeColon.contains("'s") || beforeColon.contains("'S")) {
-                        // Это команда, просто текст без префикса
-                        result = body;
-                    } else if (beforeColon.matches("^[a-zA-Z0-9_]{2,16}$") && !beforeColon.contains("'") && !beforeColon.contains(" ")) {
-                        // Есть валидный ник, форматируем с префиксом
+                        // Это команда, но если есть стрелка - все равно помечаем как Discord
+                        if (hasArrow) {
+                            result = sourceColor + "[Discord] §f" + body;
+                        } else {
+                            result = body;
+                        }
+                    } else if (beforeColon.matches("^[\\p{L}0-9_]{2,16}$") && !beforeColon.contains("'") && !beforeColon.contains(" ")) {
+                        // Есть валидный ник (включая русские буквы), форматируем с префиксом
                         result = sourceColor + "[Discord] §f" + body; // §f = белый цвет для текста
                     } else {
-                        // Это команда или что-то другое, просто текст
+                        // Это команда или что-то другое, но если есть стрелка - помечаем как Discord
+                        if (hasArrow) {
+                            result = sourceColor + "[Discord] §f" + body;
+                        } else {
+                            result = body;
+                        }
+                    }
+                } else {
+                    // Пустой beforeColon, но если есть стрелка - помечаем как Discord
+                    if (hasArrow) {
+                        result = sourceColor + "[Discord] §f" + body;
+                    } else {
                         result = body;
                     }
+                }
+            } else {
+                // Нет двоеточия, но если есть стрелка - помечаем как Discord
+                if (hasArrow) {
+                    result = sourceColor + "[Discord] §f" + body;
                 } else {
                     result = body;
                 }
-            } else {
-                // Нет двоеточия, просто текст (команда)
-                result = body;
             }
         }
 
