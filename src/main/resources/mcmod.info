@@ -1,13 +1,13 @@
 [
   {
-    "modid": "simplebuttonmod",
-    "name": "Simple Button Mod",
-    "description": "Добавляет кнопку внизу экрана, которая пишет сообщение в чат",
+    "modid": "BridgeFilter",
+    "name": "BridgeFilter",
+    "description": "Мод для гильдий учасников бриджа Разрабочик Nayokage",
     "version": "1.0.7",
     "mcversion": "1.8.9",
     "url": "",
     "updateUrl": "",
-    "authorList": ["ТвоёИмяИлиНик"],
+    "authorList": ["Nayokage"],
     "credits": "",
     "logoFile": "",
     "screenshots": [],
