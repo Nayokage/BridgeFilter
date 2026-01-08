@@ -57,14 +57,32 @@ public class UpdateDownloader {
                 }
                 
                 // Имя файла для скачивания
+                // String fileName = "BridgeFilter-" + updateInfo.version + ".jar";
+                //File tempFile = new File(modsDir, fileName + ".tmp");
+                //File finalFile = new File(modsDir, fileName);
+                //
+                // Удаляем старый временный файл если есть
+                //if (tempFile.exists()) {
+                //    tempFile.delete();
+                //}
+
                 String fileName = "BridgeFilter-" + updateInfo.version + ".jar";
+
+                // временный файл ОСТАЁТСЯ в mods (это нормально)
                 File tempFile = new File(modsDir, fileName + ".tmp");
-                File finalFile = new File(modsDir, fileName);
+                
+                // папка updates (Forge)
+                File updatesDir = new File(modsDir, "updates");
+                if (!updatesDir.exists()) updatesDir.mkdirs();
+                
+                // финальный файл ТОЛЬКО в updates
+                File finalFile = new File(updatesDir, fileName);
                 
                 // Удаляем старый временный файл если есть
                 if (tempFile.exists()) {
                     tempFile.delete();
                 }
+                
                 
                 downloadStatus = "Подключаемся к серверу...";
                 
