@@ -16,6 +16,8 @@ import org.lwjgl.input.Keyboard;
 
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.ArrayList;
+import java.util.List;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,7 +25,7 @@ import java.nio.file.StandardCopyOption;
 
 @Mod(modid = "bridgefilter",
         name = "Bridge Filter",
-        version = "1.0.7",
+        version = "1.0.8",
         clientSideOnly = true,
         updateJSON = "https://raw.githubusercontent.com/Nayokage/BridgeFilter/main/update.json")
 
@@ -143,11 +145,15 @@ public class SimpleButtonMod {
                 }
             }
             
-            // Удаляем старые версии BridgeFilter-*.jar (кроме BridgeFilter.jar)
+            // Удаляем старые версии BridgeFilter-*.jar (кроме основного и служебного BridgeFilter-new.jar)
             File[] oldVersions = modsDir.listFiles((dir, name) -> {
                 String lowerName = name.toLowerCase();
-                return lowerName.startsWith("bridgefilter") && lowerName.endsWith(".jar") 
-                       && !name.equals("BridgeFilter.jar") && !name.endsWith(".tmp") && !name.endsWith(".delete");
+                // Не трогаем основной файл и файл, который использует автообновление
+                if (name.equals("BridgeFilter.jar") || name.equals("BridgeFilter-new.jar")) {
+                    return false;
+                }
+                return lowerName.startsWith("bridgefilter") && lowerName.endsWith(".jar")
+                       && !name.endsWith(".tmp") && !name.endsWith(".delete");
             });
             if (oldVersions != null && oldVersions.length > 0) {
                 for (File oldVersion : oldVersions) {
@@ -207,7 +213,7 @@ public class SimpleButtonMod {
             System.err.println("[Bridge Filter] Ошибка при очистке старых файлов: " + e.getMessage());
         }
     }
-    
+
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
         MinecraftForge.EVENT_BUS.register(this);
@@ -220,10 +226,47 @@ public class SimpleButtonMod {
             System.err.println("[Bridge Filter] Не удалось сохранить путь к папке mods: " + e.getMessage());
         }
         
-        // Добавляем shutdown hook для удаления старых файлов при закрытии игры
+        // Загружаем конфиг при запуске игры
+        new Thread(() -> {
+            try {
+                Thread.sleep(1000); // Ждем 1 секунду для инициализации Minecraft
+                BridgeFilterConfig.init();
+                System.out.println("[Bridge Filter] Конфиг загружен при старте игры");
+            } catch (Exception e) {
+                System.err.println("[Bridge Filter] Ошибка при загрузке конфига при старте: " + e.getMessage());
+            }
+        }).start();
+        
+        // Добавляем shutdown hook для сохранения конфига и удаления старых файлов при закрытии игры
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("[Bridge Filter] ========================================");
+            System.out.println("[Bridge Filter] Игра закрывается, сохраняем конфиг синхронно...");
+            try {
+                // Логируем текущий размер блоклиста перед сохранением
+                synchronized (BridgeFilterConfig.blockList) {
+                    System.out.println("[Bridge Filter] Размер блоклиста перед сохранением: " + BridgeFilterConfig.blockList.size());
+                    for (int i = 0; i < BridgeFilterConfig.blockList.size(); i++) {
+                        System.out.println("[Bridge Filter]   [" + (i+1) + "] " + BridgeFilterConfig.blockList.get(i));
+                    }
+                }
+                
+                // Используем синхронное сохранение для гарантированного сохранения при закрытии
+                BridgeFilterConfig.saveSync();
+                
+                // Ждем немного для завершения сохранения
+                Thread.sleep(500);
+                
+                System.out.println("[Bridge Filter] Конфиг успешно сохранен при закрытии игры");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.err.println("[Bridge Filter] Прервано ожидание сохранения конфига");
+            } catch (Exception e) {
+                System.err.println("[Bridge Filter] КРИТИЧЕСКАЯ ОШИБКА при сохранении конфига при закрытии: " + e.getMessage());
+                e.printStackTrace();
+            }
             System.out.println("[Bridge Filter] Игра закрывается, удаляем старые версии мода...");
             cleanupOldModFiles();
+            System.out.println("[Bridge Filter] ========================================");
         }));
         
         // Применяем обновление из папки updates и удаляем старые файлы при запуске
@@ -240,9 +283,25 @@ public class SimpleButtonMod {
         }).start();
     }
     
+    private static boolean configLoaded = false; // Флаг для загрузки конфига
+    
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.START) return;
+        
+        // Загружаем конфиг при первом входе игрока в мир (если еще не загружен)
+        // Это гарантирует, что конфиг загружен ДО проверки блокировки
+        if (!configLoaded && Minecraft.getMinecraft().thePlayer != null && Minecraft.getMinecraft().theWorld != null) {
+            try {
+                // Инициализируем путь к файлу конфига и загружаем конфиг
+                BridgeFilterConfig.init(); // init() создаст путь и загрузит конфиг
+                configLoaded = true;
+                System.out.println("[Bridge Filter] Конфиг загружен при входе в мир: " + BridgeFilterConfig.blockList.size() + " заблокированных ников");
+            } catch (Exception e) {
+                System.err.println("[Bridge Filter] Ошибка при загрузке конфига при входе в мир: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
         
         // Проверяем обновления при входе в игру (когда игрок появляется в мире)
         // Это происходит при заходе в игру, а не только при загрузке мода
@@ -289,20 +348,36 @@ public class SimpleButtonMod {
     public void onChat(ClientChatReceivedEvent event) {
         if (event.type == 2) return; // actionbar
 
-        String unformatted = event.message.getUnformattedText();
-        String formatted   = event.message.getFormattedText();
+        // Проверяем что игрок существует
+        if (Minecraft.getMinecraft() == null || Minecraft.getMinecraft().thePlayer == null) {
+            return; // Если игрока нет, не обрабатываем сообщения
+        }
+
+        String unformatted = event.message != null ? event.message.getUnformattedText() : "";
+        String formatted   = event.message != null ? event.message.getFormattedText() : "";
+        if (unformatted == null || formatted == null) {
+            return; // Защита от null
+        }
+        
         String playerName  = Minecraft.getMinecraft().thePlayer.getName();
+        String originalBody = null; // Сохраняем body для проверки блокировки
+        String originalUnformatted = unformatted; // Сохраняем оригинальный unformatted ДО форматирования (БЕЗ префиксов)
 
         // Форматирование Guild-сообщений от bridge-ботов
         if (BridgeFilterConfig.guildBridgeFormatEnabled) {
             if (unformatted.toLowerCase().contains("guild >")) {
                 System.out.println("[Bridge Filter] onChat: обрабатываем Guild-сообщение: " + unformatted);
+                
+                // ИЗВЛЕКАЕМ BODY ДО ФОРМАТИРОВАНИЯ для проверки блокировки (БЕЗ префиксов [Discord], [Telegram], [Minecraft])
+                originalBody = extractBodyFromGuildMessage(unformatted);
+                
                 String formattedGuildMsg = formatGuildBridgeMessage(unformatted, formatted);
                 if (formattedGuildMsg != null) {
-                    System.out.println("[Bridge Filter] onChat: форматирование применено!");
+                    System.out.println("[Bridge Filter] onChat: форматирование применено! (префиксы добавлены)");
                     event.message = new ChatComponentText(formattedGuildMsg);
-                    // Обновляем unformatted для дальнейшей обработки
+                    // Обновляем unformatted для дальнейшей обработки (теперь содержит префиксы)
                     unformatted = event.message.getUnformattedText();
+                    System.out.println("[Bridge Filter] onChat: unformatted после форматирования: " + unformatted);
                 } else {
                     System.out.println("[Bridge Filter] onChat: форматирование НЕ применено (вернул null)");
                 }
@@ -311,29 +386,180 @@ public class SimpleButtonMod {
             System.out.println("[Bridge Filter] onChat: guildBridgeFormatEnabled = false");
         }
 
-        if (BridgeFilterConfig.nickHighlightEnabled && unformatted.contains(playerName)) {
-            String newMsg = formatted.replaceAll(
+        // ПРОВЕРКА БЛОКИРОВКИ: используем originalBody (БЕЗ префиксов) для проверки
+        // Префиксы [Discord], [Telegram], [Minecraft] НЕ учитываются при блокировке
+        if (BridgeFilterConfig.filterEnabled) {
+            // Используем originalBody (БЕЗ префиксов) если есть, иначе originalUnformatted (тоже БЕЗ префиксов)
+            String textToCheck = (originalBody != null && !originalBody.isEmpty()) ? originalBody : originalUnformatted;
+            String lowerMsg = textToCheck.toLowerCase();
+            String bot = BridgeFilterConfig.selectedBot.toLowerCase();
+            
+            System.out.println("[Bridge Filter] БЛОКИРОВКА: проверяем текст БЕЗ префиксов: " + textToCheck);
+            
+            // Проверяем только если это сообщение от бота (используем оригинальный unformatted БЕЗ префиксов)
+            if (originalUnformatted.toLowerCase().contains(bot)) {
+                // Синхронизируем доступ к blockList для избежания ConcurrentModificationException
+                List<String> blockListCopy;
+                synchronized (BridgeFilterConfig.blockList) {
+                    blockListCopy = new ArrayList<String>(BridgeFilterConfig.blockList);
+                }
+                for (String word : blockListCopy) {
+                    if (word != null && !word.trim().isEmpty()) {
+                        String wordLower = word.toLowerCase().trim();
+                        
+                        // УЛУЧШЕННАЯ ПРОВЕРКА БЛОКИРОВКИ с поддержкой русских букв, уровней и цитирования:
+                        // 1. Проверяем по всему body (включая уровни и цитирование)
+                        // 2. Проверяем по нику до двоеточия (если есть двоеточие) - С УРОВНЕМ И БЕЗ
+                        // 3. Проверяем обе части при цитировании (Nick->Other)
+                        
+                        boolean shouldBlock = false;
+                        
+                        // Проверка 1: Проверяем по всему body (включая уровни) - ОСНОВНАЯ ПРОВЕРКА
+                        // Примеры:
+                        // - "[515] TheIronmanNon: текст" содержит "theirnon"
+                        // - "Хатабыч на Кукумбере: текст" содержит "хатабыч на кукумбере"
+                        if (lowerMsg.contains(wordLower)) {
+                            shouldBlock = true;
+                            System.out.println("[Bridge Filter] БЛОКИРОВКА (1): найдено '" + word + "' в body: " + textToCheck);
+                        }
+                        
+                        // Проверка 2: Если есть двоеточие, проверяем часть до двоеточия (ник с уровнем ИЛИ без)
+                        // Примеры:
+                        // - "[515] TheIronmanNon: текст" -> проверяем "[515] TheIronmanNon" и "Theirnon"
+                        // - "Хатабыч на Кукумбере->Other: текст" -> проверяем "Хатабыч на Кукумбере"
+                        if (!shouldBlock && textToCheck.contains(":")) {
+                            int colonIdx = textToCheck.indexOf(':');
+                            if (colonIdx > 0) {
+                                String beforeColon = textToCheck.substring(0, colonIdx); // Оригинал с уровнями
+                                String beforeColonLower = beforeColon.toLowerCase(); // Для проверки
+                                
+                                // Проверяем с уровнями: "[515] TheIronmanNon" содержит "theirnon"
+                                if (beforeColonLower.contains(wordLower)) {
+                                    shouldBlock = true;
+                                    System.out.println("[Bridge Filter] БЛОКИРОВКА (2a): найдено '" + word + "' в нике С УРОВНЕМ: " + beforeColon);
+                                }
+                                
+                                // Проверяем БЕЗ уровня (убираем [Level] для проверки): "TheIronmanNon" содержит "theirnon"
+                                if (!shouldBlock) {
+                                    String nickWithoutLevel = beforeColonLower.replaceAll("\\s*\\[[^\\]]*\\]\\s*", " ").trim();
+                                    // Убираем лишние пробелы и проверяем
+                                    nickWithoutLevel = nickWithoutLevel.replaceAll("\\s+", " ").trim();
+                                    if (nickWithoutLevel.contains(wordLower)) {
+                                        shouldBlock = true;
+                                        System.out.println("[Bridge Filter] БЛОКИРОВКА (2b): найдено '" + word + "' в нике БЕЗ УРОВНЯ: " + beforeColon + " -> " + nickWithoutLevel);
+                                    }
+                                }
+                                
+                                // Проверка 3: Если есть цитирование (-> или ⇾), проверяем обе части ОТДЕЛЬНО
+                                // Примеры:
+                                // - "Хатабыч на Кукумбере->Other: текст" -> проверяем "Хатабыч на Кукумбере" и "Other"
+                                // - "[515] TheIronmanNon->BeaverStream: текст" -> проверяем обе части
+                                if (!shouldBlock && (beforeColon.contains("->") || beforeColon.contains("⇾") || beforeColon.contains("→") || beforeColon.contains("➜"))) {
+                                    // Разделяем по стрелкам
+                                    String[] parts = beforeColonLower.split("(->|⇾|→|➜)");
+                                    for (String part : parts) {
+                                        String cleanPart = part.trim();
+                                        // Проверяем с уровнем
+                                        if (cleanPart.contains(wordLower)) {
+                                            shouldBlock = true;
+                                            System.out.println("[Bridge Filter] БЛОКИРОВКА (3a): найдено '" + word + "' при цитировании С УРОВНЕМ в части: " + cleanPart);
+                                            break;
+                                        }
+                                        // Проверяем без уровня
+                                        String cleanPartNoLevel = cleanPart.replaceAll("\\s*\\[[^\\]]*\\]\\s*", " ").trim().replaceAll("\\s+", " ");
+                                        if (cleanPartNoLevel.contains(wordLower)) {
+                                            shouldBlock = true;
+                                            System.out.println("[Bridge Filter] БЛОКИРОВКА (3b): найдено '" + word + "' при цитировании БЕЗ УРОВНЯ в части: " + cleanPart + " -> " + cleanPartNoLevel);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (shouldBlock) {
+                            System.out.println("[Bridge Filter] БЛОКИРОВКА: СООБЩЕНИЕ ЗАБЛОКИРОВАНО! Слово: '" + word + "', Сообщение: " + textToCheck);
+                            event.setCanceled(true);
+                            if (BridgeFilterConfig.redHighlight) {
+                                // Используем оригинальное formatted сообщение для подсветки
+                                event.message = new ChatComponentText("§c" + (event.message != null ? event.message.getFormattedText() : formatted));
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Подсветка ника игрока (после проверки блокировки)
+        if (BridgeFilterConfig.nickHighlightEnabled && playerName != null && !playerName.isEmpty() && unformatted.contains(playerName)) {
+            String currentFormatted = event.message != null ? event.message.getFormattedText() : formatted;
+            if (currentFormatted != null) {
+                String newMsg = currentFormatted.replaceAll(
                     "(?i)" + Pattern.quote(playerName),
                     BridgeFilterConfig.nickHighlightColor + "§l" + playerName + "§r"
             );
             event.message = new ChatComponentText(newMsg);
         }
-
-        if (!BridgeFilterConfig.filterEnabled) return;
-
-        String lowerMsg = unformatted.toLowerCase();
-        String bot = BridgeFilterConfig.selectedBot.toLowerCase();
-        if (!lowerMsg.contains(bot)) return;
-
-        for (String word : BridgeFilterConfig.blockList) {
-            if (lowerMsg.contains(word.toLowerCase())) {
-                event.setCanceled(true);
-                if (BridgeFilterConfig.redHighlight) {
-                    event.message = new ChatComponentText("§c" + formatted);
-                }
-                return;
+        }
+    }
+    
+    /**
+     * Извлекает body часть из Guild-сообщения для проверки блокировки.
+     * НЕ удаляет уровни - они нужны для проверки блокировки по нику с уровнем.
+     * Обрабатывает форматы с уровнями и цитированием.
+     * 
+     * Примеры:
+     * "Guild > bot[Rank]: Nick [Level]: текст" -> "Nick [Level]: текст" (С УРОВНЕМ!)
+     * "Guild > bot[Rank]: Nick->Other: текст" -> "Nick->Other: текст"
+     * "Guild > bot[Rank]: [515] TheIronmanNon: текст" -> "[515] TheIronmanNon: текст" (С УРОВНЕМ!)
+     * "Guild > bot[Rank]: текст" -> "текст"
+     */
+    private String extractBodyFromGuildMessage(String fullGuildMessage) {
+        if (fullGuildMessage == null || fullGuildMessage.isEmpty()) {
+            return null;
+        }
+        
+        String[] bots = {"etobridge", "koorikage", "mothikh", "tenokage", "uzbekF3ndi", "gem_zz"};
+        String lower = fullGuildMessage.toLowerCase();
+        
+        // Находим бота
+        String foundBot = null;
+        int botIndex = -1;
+        for (String bot : bots) {
+            int idx = lower.indexOf(bot.toLowerCase());
+            if (idx >= 0) {
+                foundBot = bot;
+                botIndex = idx;
+                break;
             }
         }
+        
+        if (foundBot == null || botIndex < 0) {
+            return null;
+        }
+        
+        // Ищем двоеточие после ника бота
+        int searchFrom = botIndex + foundBot.length();
+        int colonIndex = fullGuildMessage.indexOf(':', searchFrom);
+        if (colonIndex < 0 || colonIndex + 1 >= fullGuildMessage.length()) {
+            return null;
+        }
+        
+        // ИЗВЛЕКАЕМ body часть БЕЗ УДАЛЕНИЯ УРОВНЕЙ
+        // Уровни должны остаться для проверки блокировки по нику с уровнем
+        String body = fullGuildMessage.substring(colonIndex + 1).trim();
+        
+        // Проверяем что body не пустой
+        if (body == null || body.isEmpty()) {
+            return null;
+        }
+        
+        // НЕ убираем уровни - оставляем как есть для проверки
+        // Например: "[515] TheIronmanNon: текст" должен проверяться на наличие "TheIronmanNon"
+        // даже если в сообщении есть уровень [515]
+        
+        return body;
     }
     
     /**
@@ -358,7 +584,7 @@ public class SimpleButtonMod {
 
         System.out.println("[Bridge Filter] formatGuildBridgeMessage вызван: " + fullGuildMessage);
         
-        String[] bots = {"etobridge", "koorikage", "mothikh", "tenokage"};
+        String[] bots = {"etobridge", "koorikage", "mothikh", "tenokage", "uzbekF3ndi", "gem_zz"};
 
         String lower = fullGuildMessage.toLowerCase();
 
@@ -453,71 +679,79 @@ public class SimpleButtonMod {
             // Для Telegram всегда форматируем как [Telegram], не проверяем команды
             result = sourceColor + "[Telegram] §f" + rest; // §f = белый цвет для текста
         } 
-        // Discord по умолчанию
+        // Discord по умолчанию (если не Minecraft и не Telegram)
         else if (body != null && !body.isEmpty()) {
             sourceColor = "§9"; // Синий цвет для Discord
             
-            // Проверяем наличие символов стрелок (⇾, →, ➜) - это тоже Discord сообщения
-            boolean hasArrow = body.contains("⇾") || body.contains("→") || body.contains("➜");
+            // Проверяем наличие символов стрелок (⇾, →, ➜, ->) - это тоже Discord сообщения (цитирование)
+            boolean hasArrow = body.contains("⇾") || body.contains("→") || body.contains("➜") || body.contains("->");
             
-            // Проверяем, это команда (есть 's перед :) или обычное сообщение
+            // УПРОЩЕННАЯ ЛОГИКА: Если есть двоеточие и текст после него, это Discord сообщение
+            // (если это не команда с 's)
             int colonIdx = body.indexOf(':');
-            if (colonIdx > 0 && colonIdx < 50 && colonIdx < body.length()) {
+            if (colonIdx > 0 && colonIdx < body.length()) {
                 String beforeColon = body.substring(0, colonIdx).trim();
-                if (beforeColon != null && !beforeColon.isEmpty()) {
-                    // Если перед : есть 's, это команда (например: "Nayokage's networth")
-                    if (beforeColon.contains("'s") || beforeColon.contains("'S")) {
+                String afterColon = body.substring(colonIdx + 1).trim();
+                
+                // УБИРАЕМ УРОВЕНЬ из beforeColon для проверки
+                String cleanedBeforeColon = beforeColon.replaceAll("\\s*\\[[^\\]]*\\]\\s*", "").trim();
+                
+                // Обрабатываем цитирование: "Nick->Other" или "Nick ⇾ Other"
+                boolean hasArrowBeforeColon = beforeColon.contains("->") || beforeColon.contains("⇾") || beforeColon.contains("→") || beforeColon.contains("➜");
+                if (hasArrowBeforeColon) {
+                    String[] parts = beforeColon.split("(->|⇾|→|➜)", 2);
+                    if (parts.length > 0) {
+                        cleanedBeforeColon = parts[0].trim().replaceAll("\\s*\\[[^\\]]*\\]\\s*", "").trim();
+                    }
+                }
+                
+                // Если есть текст после двоеточия, это Discord сообщение
+                if (afterColon != null && !afterColon.isEmpty()) {
+                    // Исключение: если это команда с 's (например: "Nayokage's networth")
+                    if (cleanedBeforeColon != null && (cleanedBeforeColon.contains("'s") || cleanedBeforeColon.contains("'S"))) {
                         // Это команда, но если есть стрелка - все равно помечаем как Discord
-                        if (hasArrow) {
+                        if (hasArrow || hasArrowBeforeColon) {
                             result = sourceColor + "[Discord] §f" + body;
                         } else {
-                            result = body;
+                            result = body; // Команда без префикса
                         }
-                    } else if (beforeColon.matches("^[\\p{L}0-9_]{2,16}$") && !beforeColon.contains("'") && !beforeColon.contains(" ")) {
-                        // Есть валидный ник (включая русские буквы), форматируем с префиксом
-                        result = sourceColor + "[Discord] §f" + body; // §f = белый цвет для текста
-                    } else {
-                        // Это команда или что-то другое, но если есть стрелка - помечаем как Discord
-                        if (hasArrow) {
-                            result = sourceColor + "[Discord] §f" + body;
-                        } else {
-                            result = body;
-                        }
+                    } 
+                    // Если есть стрелка (цитирование), всегда помечаем как Discord
+                    else if (hasArrow || hasArrowBeforeColon) {
+                        result = sourceColor + "[Discord] §f" + body;
+                    }
+                    // Если перед двоеточием есть хотя бы один символ (не пустое), это Discord ник (включая русские)
+                    else if (cleanedBeforeColon != null && !cleanedBeforeColon.isEmpty() && cleanedBeforeColon.length() > 0) {
+                        // Это Discord сообщение с ником (включая русские ники и ники с уровнями)
+                        result = sourceColor + "[Discord] §f" + body;
+                        System.out.println("[Bridge Filter] Discord: обнаружено сообщение (включая русский ник): " + cleanedBeforeColon + " -> " + afterColon.substring(0, Math.min(20, afterColon.length())));
+                    } 
+                    else {
+                        // Пустой ник перед двоеточием, но есть текст после - это команда
+                        result = body; // Команда без префикса
                     }
                 } else {
-                    // Пустой beforeColon, но если есть стрелка - помечаем как Discord
-                    if (hasArrow) {
-                        result = sourceColor + "[Discord] §f" + body;
-                    } else {
-                        result = body;
-                    }
+                    // Нет текста после двоеточия - это команда
+                    result = body; // Команда без префикса
                 }
             } else {
                 // Нет двоеточия, но если есть стрелка - помечаем как Discord
                 if (hasArrow) {
                     result = sourceColor + "[Discord] §f" + body;
                 } else {
-                    result = body;
+                    result = body; // Команда без префикса
                 }
             }
         }
 
-        // Если результат не содержит цветовых кодов (команды без префикса), добавляем цвет из оригинального сообщения
-        if (result != null && !result.startsWith("§") && formattedMessage != null && !formattedMessage.isEmpty()) {
-            try {
-                // Извлекаем цветовые коды из начала formatted сообщения
-                Pattern colorPattern = Pattern.compile("^(§[0-9a-fk-or])+");
-                Matcher colorMatcher = colorPattern.matcher(formattedMessage);
-                if (colorMatcher.find()) {
-                    String colorPrefix = colorMatcher.group();
-                    if (colorPrefix != null) {
-                        result = colorPrefix + result;
-                    }
-                }
-            } catch (Exception e) {
-                System.out.println("[Bridge Filter] Ошибка при извлечении цветов: " + e.getMessage());
-                // Продолжаем без цветов
-            }
+        // Команды без префикса получают нейтральный серый цвет (§7) вместо зеленого
+        // Это исправляет проблему, когда команды получают неправильный зеленый цвет
+        if (result != null && !result.startsWith("§")) {
+            // Команды без префикса получают серый цвет вместо цвета из оригинального сообщения
+            result = "§7" + result;
+        } else if (result != null && result.startsWith("§a") && !result.contains("[Minecraft]") && !result.contains("[Telegram]") && !result.contains("[Discord]")) {
+            // Если команда случайно получила зеленый цвет (§a), но не имеет префикса, заменяем на серый
+            result = "§7" + result.replaceFirst("^§a+", "");
         }
         
         // Защита от null

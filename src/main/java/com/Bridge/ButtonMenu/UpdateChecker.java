@@ -15,7 +15,7 @@ public class UpdateChecker {
     
     private static final String UPDATE_JSON_URL = "https://raw.githubusercontent.com/Nayokage/BridgeFilter/main/update.json";
     private static final String GITHUB_API_URL = "https://api.github.com/repos/Nayokage/BridgeFilter/releases/latest";
-    private static final String CURRENT_VERSION = "1.0.7";
+    public static final String CURRENT_VERSION = "1.0.8";
     
     public static UpdateInfo latestUpdate = null;
     public static boolean updateAvailable = false;
@@ -100,7 +100,7 @@ public class UpdateChecker {
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
-            conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.7");
+            conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.8");
             
             BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
             StringBuilder response = new StringBuilder();
@@ -161,7 +161,7 @@ public class UpdateChecker {
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
-            conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.7");
+            conn.setRequestProperty("User-Agent", "BridgeFilter-Mod/1.0.8");
             conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
             
             BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
@@ -225,5 +225,39 @@ public class UpdateChecker {
         } catch (Exception e) {
             return false;
         }
+    }
+    
+    /**
+     * Получает информацию о последнем релизе (даже если он не новее текущей версии)
+     * Используется для кнопки "Обновить Автоматически"
+     */
+    public static UpdateInfo getLatestRelease() {
+        // Если latestUpdate уже загружен, возвращаем его
+        if (latestUpdate != null) {
+            return latestUpdate;
+        }
+        
+        // Если не загружен, пробуем загрузить синхронно (или возвращаем fallback)
+        try {
+            UpdateInfo apiInfo = checkViaGitHubAPI();
+            if (apiInfo != null) {
+                return apiInfo;
+            }
+            
+            UpdateInfo jsonInfo = checkViaUpdateJson();
+            if (jsonInfo != null) {
+                return jsonInfo;
+            }
+        } catch (Exception e) {
+            // Игнорируем ошибки, возвращаем fallback
+        }
+        
+        // Fallback: возвращаем информацию с базовым URL
+        return new UpdateInfo(
+            "latest",
+            null,
+            "",
+            "https://github.com/Nayokage/BridgeFilter/releases/latest"
+        );
     }
 }

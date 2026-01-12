@@ -17,7 +17,7 @@ buildscript {
 apply plugin: 'net.minecraftforge.gradle.forge'
 
 // Версия мода и мейвен-координаты
-version = "1.0.7"
+version = "1.0.8"
 group = "com.nayokage.BridgeFilter"
 archivesBaseName = "BridgeFilter"
 
@@ -25,7 +25,7 @@ minecraft {
     // Forge для 1.8.9
     version = "1.8.9-11.15.1.2318-1.8.9"
     runDir = "run"
-
+    
     // MCP маппинги
     mappings = "stable_20"
     // makeObfSourceJar = false // если не нужен obf source jar
@@ -50,7 +50,7 @@ processResources {
         include 'mcmod.info'
         expand 'version': project.version, 'mcversion': project.minecraft.version
     }
-
+        
     // копируем остальные ресурсы как есть
     from(sourceSets.main.resources.srcDirs) {
         exclude 'mcmod.info'
