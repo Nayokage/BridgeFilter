@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "bridgefilter",
+  "version": "${version}",
+  "name": "Bridge Filter",
+  "description": "Filter and format chat messages from Bridge bots",
+  "authors": [
+    "Nayokage aka fiokem"
+  ],
+  "contact": {
+    "homepage": "https://github.com/Nayokage aka fiokem/BridgeFilter",
+    "sources": "https://github.com/Nayokage aka fiokem/BridgeFilter"
+  },
+  "license": "MIT",
+  "icon": "assets/bridgefilter/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.Bridge.ButtonMenu.SimpleButtonMod"
+    ]
+  },
+  "mixins": [
+    "bridgefilter.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.1",
+    "java": ">=21"
+  },
+  "suggests": {
+    "cloth-config": "*"
+  }
+}
